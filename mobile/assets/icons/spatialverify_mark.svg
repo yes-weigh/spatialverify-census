@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="svGrad" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00E5A0"/>
+      <stop offset="1" stop-color="#00B87A"/>
+    </linearGradient>
+  </defs>
+  <!-- Census block grid -->
+  <rect x="10" y="10" width="44" height="44" rx="10" stroke="url(#svGrad)" stroke-width="2.5" opacity="0.55"/>
+  <path d="M10 28h44M28 10v44" stroke="url(#svGrad)" stroke-width="1.5" opacity="0.35"/>
+  <!-- Pin + verify check -->
+  <path d="M32 18c-5.5 0-10 4.2-10 9.4 0 7.1 10 18.6 10 18.6s10-11.5 10-18.6C42 22.2 37.5 18 32 18z" fill="url(#svGrad)"/>
+  <path d="M27.5 27.5l3.2 3.2 6.8-7" stroke="#0A0A0F" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

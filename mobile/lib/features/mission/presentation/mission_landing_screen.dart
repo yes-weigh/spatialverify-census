@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../../core/providers/providers.dart';
+import '../../../core/brand/app_brand.dart';
 import '../../../core/theme/app_theme.dart';
-import '../utils/mission_navigation.dart';
+import '../../../core/widgets/brand_logo.dart';
 import 'mission_game_map_screen.dart';
 import 'mission_home_screen.dart';
 import 'mission_providers.dart';
@@ -18,17 +19,19 @@ class MissionLandingScreen extends ConsumerWidget {
     final launchLocAsync = ref.watch(appLaunchLocationProvider);
 
     return launchLocAsync.when(
-      loading: () => const Scaffold(
-        backgroundColor: Color(0xFF0D0D14),
+      loading: () => Scaffold(
+        backgroundColor: AppBrand.ink,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: Color(0xFF4285F4)),
-              SizedBox(height: 16),
+              const BrandMark(size: 72, useRasterIcon: true, withGlow: true),
+              const SizedBox(height: 20),
+              const CircularProgressIndicator(color: AppBrand.accent),
+              const SizedBox(height: 16),
               Text(
-                'Finding your location…',
-                style: TextStyle(color: AppTheme.textSecondary),
+                AppBrand.taglineShort,
+                style: TextStyle(color: AppTheme.textSecondary.withValues(alpha: 0.9)),
               ),
             ],
           ),

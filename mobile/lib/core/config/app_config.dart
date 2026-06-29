@@ -1,3 +1,5 @@
+import '../brand/app_brand.dart';
+
 class AppConfig {
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
@@ -37,7 +39,7 @@ class AppConfig {
   /// Legacy REST API mode when Firebase is off and standalone is off.
   static bool get useRestBackend => !standaloneMode && !useFirebase;
 
-  static const String appName = 'SpatialVerify';
+  static const String appName = AppBrand.name;
   static const int syncBatchSize = 50;
   static const int syncRetryMax = 5;
   static const double minDetectionConfidence = 0.5;

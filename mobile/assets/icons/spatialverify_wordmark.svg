@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 48" fill="none">
+  <defs>
+    <linearGradient id="wmGrad" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00E5A0"/>
+      <stop offset="1" stop-color="#00B87A"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="6" width="36" height="36" rx="9" stroke="url(#wmGrad)" stroke-width="2" opacity="0.5"/>
+  <path d="M20 14c-3.9 0-7 3-7 6.7 0 5 7 13.3 7 13.3s7-8.3 7-13.3C27 17 23.9 14 20 14z" fill="url(#wmGrad)"/>
+  <path d="M17 20.5l2.2 2.2 4.8-5" stroke="#0A0A0F" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="52" y="33" fill="#F0F0F5" font-family="Inter,Segoe UI,sans-serif" font-size="22" font-weight="700" letter-spacing="-0.5">SpatialVerify</text>
+</svg>
