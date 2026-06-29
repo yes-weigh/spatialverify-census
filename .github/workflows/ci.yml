@@ -78,21 +78,19 @@ jobs:
         run: flutter build apk --release
 
       - name: Publish to Firebase (OTA)
-        if: ${{ secrets.FIREBASE_TOKEN != '' }}
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           GITHUB_SHA: ${{ github.sha }}
-          RELEASE_NOTES: ${{ github.event.head_commit.message }}
+          RELEASE_NOTES: ${{ github.event.head_commit.message || 'Manual workflow run' }}
           PUBSPEC_PATH: pubspec.yaml
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
           BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
-        run: bash ../scripts/publish_android_release.sh build/app/outputs/flutter-apk/app-release.apk
-
-      - name: Skip publish (no FIREBASE_TOKEN)
-        if: ${{ secrets.FIREBASE_TOKEN == '' }}
         run: |
-          echo "::warning::FIREBASE_TOKEN secret not set — APK built but not published."
-          echo "Run scripts/setup_github_firebase_token.ps1 once on your machine."
+          if [ -z "${FIREBASE_TOKEN}" ]; then
+            echo "::warning::FIREBASE_TOKEN secret not set — APK built but not published."
+            exit 0
+          fi
+          bash ../scripts/publish_android_release.sh build/app/outputs/flutter-apk/app-release.apk
 
       - name: Commit bumped version
         run: |
