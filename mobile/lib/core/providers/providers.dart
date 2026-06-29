@@ -5,6 +5,7 @@ import '../../core/storage/secure_storage.dart';
 import '../../features/auth/data/auth_service.dart';
 import '../../features/auth/data/firebase_auth_repository.dart';
 import '../../features/mission/data/firebase_mission_repository.dart';
+import '../updates/app_update_service.dart';
 
 final secureStorageProvider = Provider<SecureLocalStorage>((ref) {
   throw UnimplementedError('Must be overridden in main');
@@ -30,6 +31,8 @@ final authServiceProvider = Provider<AuthService>((ref) {
 });
 
 final authRepositoryProvider = Provider<AuthService>((ref) => ref.watch(authServiceProvider));
+
+final appUpdateServiceProvider = Provider<AppUpdateService>((ref) => AppUpdateService());
 
 final authStateProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   return AuthNotifier(ref.watch(authServiceProvider), ref);

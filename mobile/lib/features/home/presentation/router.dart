@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/models.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/updates/app_update_scope.dart';
 import '../../auth/presentation/login_screen.dart';
 import 'home_screen.dart';
 import '../../map/presentation/map_screen.dart';
@@ -201,6 +202,11 @@ class ProjectListScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Projects'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.system_update_alt),
+            tooltip: 'Check for updates',
+            onPressed: () => checkForAppUpdateManually(context, ref),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sign out',

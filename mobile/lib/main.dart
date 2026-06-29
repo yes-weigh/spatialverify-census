@@ -11,6 +11,7 @@ import 'core/theme/app_theme.dart';
 import 'features/home/presentation/router.dart';
 import 'features/mission/data/hlb_local_cache.dart';
 import 'features/mission/presentation/mission_providers.dart';
+import 'core/updates/app_update_scope.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,11 +59,13 @@ class SpatialVerifyApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
 
-    return MaterialApp.router(
-      title: AppConfig.appName,
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      routerConfig: router,
+    return AppUpdateScope(
+      child: MaterialApp.router(
+        title: AppConfig.appName,
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.darkTheme,
+        routerConfig: router,
+      ),
     );
   }
 }

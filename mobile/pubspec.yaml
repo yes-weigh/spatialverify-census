@@ -1,7 +1,7 @@
 name: spatialverify
 description: Geospatial survey, verification, and HLB mapping platform.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: '>=3.5.0 <4.0.0'
@@ -46,6 +46,7 @@ dependencies:
   latlong2: ^0.9.1
   google_maps_flutter: ^2.10.0
   google_mlkit_text_recognition: ^0.14.0
+  ota_update: ^6.0.0
   pdf: ^3.11.1
   printing: ^5.13.4
   firebase_core: ^3.13.0

@@ -35,3 +35,70 @@ jobs:
 
       - name: Build APK
         run: flutter build apk --debug
+
+  publish-android-release:
+    name: Publish OTA release APK
+    needs: mobile
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Bump pubspec build number
+        id: version
+        run: |
+          read -r VERSION_NAME BUILD_NUMBER < <(python3 ../scripts/bump_pubspec_build.py pubspec.yaml)
+          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "Bumped to ${VERSION_NAME}+${BUILD_NUMBER}"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Publish to Firebase (OTA)
+        if: ${{ secrets.FIREBASE_TOKEN != '' }}
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          GITHUB_SHA: ${{ github.sha }}
+          RELEASE_NOTES: ${{ github.event.head_commit.message }}
+          PUBSPEC_PATH: pubspec.yaml
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+        run: bash ../scripts/publish_android_release.sh build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Skip publish (no FIREBASE_TOKEN)
+        if: ${{ secrets.FIREBASE_TOKEN == '' }}
+        run: |
+          echo "::warning::FIREBASE_TOKEN secret not set — APK built but not published."
+          echo "Run scripts/setup_github_firebase_token.ps1 once on your machine."
+
+      - name: Commit bumped version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml
+          if git diff --staged --quiet; then
+            echo "No pubspec changes to commit"
+            exit 0
+          fi
+          git commit -m "chore(release): bump build to ${{ steps.version.outputs.build_number }} [skip ci]"
+          git push

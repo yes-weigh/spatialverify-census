@@ -13,5 +13,11 @@ service firebase.storage {
     match /users/{userId}/{allPaths=**} {
       allow read, write: if isOwner(userId);
     }
+
+    // Signed-in field apps download OTA APK builds published by CI.
+    match /app-releases/android/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
   }
 }

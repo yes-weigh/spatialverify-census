@@ -21,5 +21,11 @@ service cloud.firestore {
         }
       }
     }
+
+    // OTA release metadata (written by CI service account / admin only).
+    match /system/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
   }
 }
