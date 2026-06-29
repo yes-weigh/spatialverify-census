@@ -61,6 +61,9 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
   gmaps.LatLng? _fineTunePosition;
   gmaps.LatLng? _fineTuneOriginal;
 
+  var _lineDrawMode = false;
+  final List<gmaps.LatLng> _lineDraftPoints = [];
+
   EbMissionQuery get _query => EbMissionQuery(ebId: widget.ebId, projectId: widget.projectId);
 
   @override
@@ -191,6 +194,24 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
           ),
         if (d.hasOfficialBoundary)
           MissionMoreSheetItem(
+            icon: Icons.polyline_outlined,
+            label: 'Draw road / canal',
+            onTap: () => _startLineDraw(),
+          ),
+        if (d.hasOfficialBoundary)
+          MissionMoreSheetItem(
+            icon: Icons.text_fields_outlined,
+            label: 'Add map label',
+            onTap: () => _markAnnotationAtGps(context),
+          ),
+        if (d.hasOfficialBoundary)
+          MissionMoreSheetItem(
+            icon: Icons.link_outlined,
+            label: 'Adjacent HLB reference',
+            onTap: () => _markAdjacentHlbAtGps(context),
+          ),
+        if (d.hasOfficialBoundary)
+          MissionMoreSheetItem(
             icon: Icons.videocam_outlined,
             label: 'Camera discovery walk',
             onTap: () => _startCapture(context, d),
@@ -289,6 +310,8 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                 showDraftPins: false,
                 hlbBuildings: session?.hlbBuildings ?? const [],
                 hlbLandmarks: session?.hlbLandmarks ?? const [],
+                hlbLineFeatures: session?.hlbLineFeatures ?? const [],
+                lineDraftPoints: _lineDrawMode ? _lineDraftPoints : const [],
                 showHlbMarkings: _showDraftBuildings,
                 walkPath: session?.walkPath ?? const [],
                 showWalkPath: _showWalkPath,
@@ -302,8 +325,11 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                   _route = route;
                   _loadingRoute = false;
                 }),
-                onMapLongPress: d.hasOfficialBoundary && _fineTuningLandmark == null
+                onMapLongPress: d.hasOfficialBoundary && _fineTuningLandmark == null && !_lineDrawMode
                     ? (latLng) => _onMapLongPress(context, d, latLng.latitude, latLng.longitude)
+                    : null,
+                onMapTap: _lineDrawMode
+                    ? (latLng) => _onLineDrawTap(latLng.latitude, latLng.longitude)
                     : null,
                 fineTuningLandmarkId: _fineTuningLandmark?.id,
                 fineTuningLandmarkPosition: _fineTunePosition,
@@ -402,6 +428,18 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                   ),
                 ),
               ),
+              if (_lineDrawMode)
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: showNav ? 96 : 88,
+                  child: _LineDrawHud(
+                    pointCount: _lineDraftPoints.length,
+                    onUndo: _lineDraftPoints.isNotEmpty ? _undoLinePoint : null,
+                    onFinish: _lineDraftPoints.length >= 2 ? () => _finishLineDraw(context) : null,
+                    onCancel: _cancelLineDraw,
+                  ),
+                ),
               if (showNav && AppConfig.hasGoogleMaps)
                 Positioned(
                   left: 0,
@@ -418,6 +456,54 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
         },
       ),
     );
+  }
+
+  void _startLineDraw() {
+    setState(() {
+      _lineDrawMode = true;
+      _lineDraftPoints.clear();
+      _layersOpen = false;
+      _fineTuningLandmark = null;
+    });
+  }
+
+  void _cancelLineDraw() {
+    setState(() {
+      _lineDrawMode = false;
+      _lineDraftPoints.clear();
+    });
+  }
+
+  void _undoLinePoint() {
+    if (_lineDraftPoints.isEmpty) return;
+    setState(() => _lineDraftPoints.removeLast());
+  }
+
+  void _onLineDrawTap(double lat, double lng) {
+    setState(() => _lineDraftPoints.add(gmaps.LatLng(lat, lng)));
+  }
+
+  Future<void> _finishLineDraw(BuildContext context) async {
+    if (_lineDraftPoints.length < 2) return;
+    if (!context.mounted) return;
+
+    final result = await MissionHlbMarkSheet.showLineFeature(
+      context,
+      pointCount: _lineDraftPoints.length,
+    );
+    if (result == null || !context.mounted) return;
+
+    final local = ref.read(missionLocalFirstProvider);
+    await local.confirmRoadSegment(
+      widget.ebId,
+      _lineDraftPoints.map((p) => (lat: p.latitude, lng: p.longitude)).toList(),
+      segmentType: result.segmentType,
+      name: result.name,
+    );
+    _cancelLineDraw();
+    await _reloadSession();
+    ref.invalidate(discoveryStatusProvider(_query));
+    ref.invalidate(draftMapProvider(_query));
   }
 
   void _onMapLongPress(BuildContext context, DiscoveryStatus d, double lat, double lng) {
@@ -575,6 +661,58 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
     ref.invalidate(draftMapProvider(_query));
   }
 
+  Future<void> _markAnnotationAtGps(BuildContext context) async {
+    final pos = position ?? widget.initialPosition;
+    if (pos == null) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Waiting for GPS — try again in a moment')),
+      );
+      return;
+    }
+    await _markAnnotationAt(context, pos.latitude, pos.longitude);
+  }
+
+  Future<void> _markAdjacentHlbAtGps(BuildContext context) async {
+    final pos = position ?? widget.initialPosition;
+    if (pos == null) return;
+    if (!context.mounted) return;
+    final result = await MissionHlbMarkSheet.showMapAnnotation(
+      context,
+      initialType: 'adjacent_hlb',
+      initialText: 'HLB NO: ',
+    );
+    if (result == null || !context.mounted) return;
+    if (!await _confirmMarkLocation(pos.latitude, pos.longitude)) return;
+    final local = ref.read(missionLocalFirstProvider);
+    await local.addMapAnnotation(
+      widget.ebId,
+      text: result.text,
+      annotationType: result.annotationType,
+      latitude: pos.latitude,
+      longitude: pos.longitude,
+      rotationDegrees: result.rotationDegrees,
+    );
+    ref.invalidate(draftMapProvider(_query));
+  }
+
+  Future<void> _markAnnotationAt(BuildContext context, double lat, double lng) async {
+    if (!await _confirmMarkLocation(lat, lng)) return;
+    if (!context.mounted) return;
+    final result = await MissionHlbMarkSheet.showMapAnnotation(context);
+    if (result == null || !context.mounted) return;
+    final local = ref.read(missionLocalFirstProvider);
+    await local.addMapAnnotation(
+      widget.ebId,
+      text: result.text,
+      annotationType: result.annotationType,
+      latitude: lat,
+      longitude: lng,
+      rotationDegrees: result.rotationDegrees,
+    );
+    ref.invalidate(draftMapProvider(_query));
+  }
+
   Future<void> _startCapture(BuildContext context, DiscoveryStatus d) async {
     final local = ref.read(missionLocalFirstProvider);
     await local.recordBoundaryAudit(widget.ebId, 'discovery_started');
@@ -639,7 +777,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
               ),
               const SizedBox(height: 12),
               Text(
-                '${map.buildings.length} buildings · ${map.landmarks.length} landmarks',
+                '${map.buildings.length} buildings · ${map.landmarks.length} landmarks · ${map.lineFeatures.length} lines',
                 style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
               ),
             ],
@@ -647,6 +785,61 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
         ),
       );
     });
+  }
+}
+
+class _LineDrawHud extends StatelessWidget {
+  const _LineDrawHud({
+    required this.pointCount,
+    required this.onCancel,
+    this.onUndo,
+    this.onFinish,
+  });
+
+  final int pointCount;
+  final VoidCallback? onUndo;
+  final VoidCallback? onFinish;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      borderRadius: BorderRadius.circular(14),
+      color: Colors.black.withValues(alpha: 0.9),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Tap map to trace road, canal, or path · $pointCount point${pointCount == 1 ? '' : 's'}',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                TextButton(onPressed: onCancel, child: const Text('Cancel')),
+                if (onUndo != null) ...[
+                  const SizedBox(width: 4),
+                  TextButton(onPressed: onUndo, child: const Text('Undo')),
+                ],
+                const Spacer(),
+                ElevatedButton(
+                  onPressed: onFinish,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF42A5F5),
+                    foregroundColor: Colors.black,
+                    disabledBackgroundColor: Colors.white24,
+                  ),
+                  child: const Text('Finish line'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

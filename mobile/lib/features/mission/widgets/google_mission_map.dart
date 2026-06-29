@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/maps/google_directions_service.dart';
 import '../data/hlb_census_symbols.dart';
+import '../data/hlb_feature_painter.dart';
 import '../data/hlb_official_catalog.dart';
 import '../data/mission_map_helpers.dart';
 import '../data/mission_map_session.dart';
@@ -33,6 +34,8 @@ class GoogleMissionMap extends StatefulWidget {
     this.showDraftPins = true,
     this.hlbBuildings = const [],
     this.hlbLandmarks = const [],
+    this.hlbLineFeatures = const [],
+    this.lineDraftPoints = const [],
     this.showHlbMarkings = true,
     this.walkPath = const [],
     this.showWalkPath = true,
@@ -47,6 +50,7 @@ class GoogleMissionMap extends StatefulWidget {
     this.lockCameraGestures = false,
     this.onRouteLoaded,
     this.onMapLongPress,
+    this.onMapTap,
     this.fineTuningLandmarkId,
     this.fineTuningLandmarkPosition,
     this.onLandmarkDrag,
@@ -70,6 +74,8 @@ class GoogleMissionMap extends StatefulWidget {
   final bool showDraftPins;
   final List<MissionHlbBuildingPin> hlbBuildings;
   final List<MissionHlbLandmarkPin> hlbLandmarks;
+  final List<MissionMapLineFeature> hlbLineFeatures;
+  final List<LatLng> lineDraftPoints;
   final bool showHlbMarkings;
   final List<GpsPoint> walkPath;
   final bool showWalkPath;
@@ -84,6 +90,7 @@ class GoogleMissionMap extends StatefulWidget {
   final bool lockCameraGestures;
   final ValueChanged<DirectionsRoute?>? onRouteLoaded;
   final void Function(LatLng position)? onMapLongPress;
+  final void Function(LatLng position)? onMapTap;
   final String? fineTuningLandmarkId;
   final LatLng? fineTuningLandmarkPosition;
   final void Function(String landmarkId, LatLng position)? onLandmarkDrag;
@@ -157,6 +164,8 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
         oldWidget.showDraftPins != widget.showDraftPins ||
         oldWidget.hlbBuildings != widget.hlbBuildings ||
         oldWidget.hlbLandmarks != widget.hlbLandmarks ||
+        oldWidget.hlbLineFeatures != widget.hlbLineFeatures ||
+        oldWidget.lineDraftPoints != widget.lineDraftPoints ||
         oldWidget.showHlbMarkings != widget.showHlbMarkings ||
         oldWidget.fineTuningLandmarkId != widget.fineTuningLandmarkId ||
         oldWidget.fineTuningLandmarkPosition != widget.fineTuningLandmarkPosition ||
@@ -321,6 +330,39 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
       ));
     }
 
+    if (widget.showHlbMarkings) {
+      for (final seg in widget.hlbLineFeatures) {
+        if (seg.points.length < 2) continue;
+        final type = HlbOfficialCatalog.normalizeLineType(seg.segmentType);
+        polylines.add(Polyline(
+          polylineId: PolylineId('hlb_line_${seg.id}'),
+          points: seg.points.map((p) => LatLng(p.lat, p.lng)).toList(),
+          color: HlbFeaturePainter.lineFeatureColor(type),
+          width: type == 'river' || type == 'canal' ? 5 : type == 'pucca_road' ? 6 : 4,
+          patterns: _linePatterns(type),
+          zIndex: 8,
+        ));
+      }
+    }
+
+    if (widget.lineDraftPoints.length >= 2) {
+      polylines.add(Polyline(
+        polylineId: const PolylineId('line_draft'),
+        points: widget.lineDraftPoints,
+        color: const Color(0xFFFFAB00),
+        width: 5,
+        patterns: [PatternItem.dash(10), PatternItem.gap(6)],
+        zIndex: 15,
+      ));
+    } else if (widget.lineDraftPoints.length == 1) {
+      markers.add(Marker(
+        markerId: const MarkerId('line_draft_start'),
+        position: widget.lineDraftPoints.first,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+        zIndexInt: 15,
+      ));
+    }
+
     if (widget.showNavigationRoute && _route != null && _route!.points.isNotEmpty) {
       polylines.add(Polyline(
         polylineId: const PolylineId('navigation_route'),
@@ -439,6 +481,21 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
     });
   }
 
+  List<PatternItem> _linePatterns(String type) {
+    switch (HlbOfficialCatalog.normalizeLineType(type)) {
+      case 'kutcha_road':
+        return [PatternItem.dash(10), PatternItem.gap(8)];
+      case 'street':
+        return [PatternItem.dash(8), PatternItem.gap(6)];
+      case 'path':
+        return [PatternItem.dot, PatternItem.gap(8)];
+      case 'railway':
+        return [PatternItem.dash(12), PatternItem.gap(8)];
+      default:
+        return [];
+    }
+  }
+
   Future<void> _fitCamera({bool fitContent = false}) async {
     final controller = _controller;
     if (controller == null) return;
@@ -528,6 +585,7 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
           groundOverlays: _groundOverlays,
           markers: _markers,
           onLongPress: widget.onMapLongPress,
+          onTap: widget.onMapTap,
           onMapCreated: (c) async {
             _controller = c;
             _tryCenterOnUser();

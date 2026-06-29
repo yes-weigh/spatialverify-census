@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../models/mission_models.dart' as models;
 import '../models/mission_models.dart';
 import 'hlb_geo_engine.dart';
@@ -394,6 +396,108 @@ class HlbStateComputer {
       );
     }).toList();
 
+    final buildingCoords = {
+      for (final b in state.buildings)
+        b.localId: HlbGeoEngine.projectToMap(b.latitude, b.longitude, bounds),
+    };
+    final serpentineArrows = <SerpentineArrow>[];
+    for (var i = 0; i < ordered.length - 1; i++) {
+      final from = buildingCoords[ordered[i].id];
+      final to = buildingCoords[ordered[i + 1].id];
+      if (from == null || to == null) continue;
+      serpentineArrows.add(SerpentineArrow(
+        fromX: from.x,
+        fromY: from.y,
+        toX: to.x,
+        toY: to.y,
+        sequence: i + 1,
+      ));
+    }
+
+    final lineFeatures = state.roadSegments.map((seg) {
+      final pts = seg.points
+          .map((p) {
+            final proj = HlbGeoEngine.projectToMap(p.lat, p.lng, bounds);
+            return models.MapPoint(proj.x, proj.y);
+          })
+          .toList();
+      return DraftMapLineFeature(
+        id: seg.localId,
+        segmentType: HlbOfficialCatalog.normalizeLineType(seg.segmentType),
+        name: seg.name,
+        points: pts,
+        labelRotation: _segmentLabelRotationDegrees(pts),
+      );
+    }).toList();
+
+    final annotations = state.mapAnnotations
+        .map(
+          (a) => DraftMapAnnotation(
+            text: a.text,
+            annotationType: a.annotationType,
+            mapX: a.mapX,
+            mapY: a.mapY,
+            rotationDegrees: a.rotationDegrees,
+          ),
+        )
+        .toList();
+
+    DraftMapEndpoint? startPoint;
+    DraftMapEndpoint? endPoint;
+    if (ordered.isNotEmpty) {
+      final firstId = ordered.first.id;
+      final lastId = ordered.last.id;
+      final firstB = _buildingById(state.buildings, firstId);
+      final lastB = _buildingById(state.buildings, lastId);
+      if (firstB != null) {
+        final p = HlbGeoEngine.projectToMap(firstB.latitude, firstB.longitude, bounds);
+        startPoint = DraftMapEndpoint(
+          label: 'Starting Point',
+          mapX: p.x,
+          mapY: p.y,
+          buildingNumber: firstB.buildingNumber,
+        );
+      }
+      if (lastB != null && lastB.localId != firstId) {
+        final p = HlbGeoEngine.projectToMap(lastB.latitude, lastB.longitude, bounds);
+        endPoint = DraftMapEndpoint(
+          label: 'Ending Point',
+          mapX: p.x,
+          mapY: p.y,
+          buildingNumber: lastB.buildingNumber,
+        );
+      }
+    }
+
+    final pdfMeta = state.layoutGeoref?['pdfMetadata'];
+    DraftHlbTitleBlock titleBlock;
+    if (pdfMeta is Map) {
+      final meta = Map<String, dynamic>.from(pdfMeta);
+      titleBlock = DraftHlbTitleBlock(
+        ebCode: state.ebCode,
+        stateName: meta['stateName'] as String?,
+        stateCode: meta['stateCode'] as String?,
+        district: meta['district'] as String?,
+        districtCode: meta['districtCode'] as String?,
+        subDistrict: meta['subDistrict'] as String?,
+        subDistrictCode: meta['subDistrictCode'] as String?,
+        townVillage: meta['townVillage'] as String?,
+        townCode: meta['townCode'] as String?,
+        wardNo: meta['wardNo'] as String?,
+        subBlockNo: meta['subBlockNo'] as String?,
+      );
+    } else {
+      titleBlock = DraftHlbTitleBlock(ebCode: state.ebCode);
+    }
+
+    DraftHlbFooterBlock footerBlock;
+    final footerRaw = state.layoutGeoref?['layoutMapFooter'];
+    if (footerRaw is Map) {
+      footerBlock = DraftHlbFooterBlock.fromJson(Map<String, dynamic>.from(footerRaw));
+    } else {
+      footerBlock = const DraftHlbFooterBlock();
+    }
+
     return DraftHlbMap(
       ebId: state.ebId,
       ebCode: state.ebCode,
@@ -403,8 +507,31 @@ class HlbStateComputer {
       landmarks: landmarks,
       walkPath: walkPath,
       serpentineOrder: serpentine,
+      lineFeatures: lineFeatures,
+      serpentineArrows: serpentineArrows,
+      titleBlock: titleBlock,
+      footerBlock: footerBlock,
+      annotations: annotations,
+      startPoint: startPoint,
+      endPoint: endPoint,
       isOfficialBoundary: _hasOfficial(state),
     );
+  }
+
+  static LocalBuilding? _buildingById(List<LocalBuilding> buildings, String id) {
+    for (final b in buildings) {
+      if (b.localId == id) return b;
+    }
+    return null;
+  }
+
+  static double _segmentLabelRotationDegrees(List<models.MapPoint> pts) {
+    if (pts.length < 2) return 0;
+    final mid = pts.length ~/ 2;
+    final a = pts[mid - 1];
+    final b = pts[mid];
+    final radians = math.atan2(b.y - a.y, b.x - a.x);
+    return radians * 180 / math.pi;
   }
 
   static ZeroExclusionValidation validate(HlbLocalState state) {

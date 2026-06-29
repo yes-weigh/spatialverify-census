@@ -30,6 +30,8 @@ class MissionMapCanvas extends StatelessWidget {
     this.showDraftPins = true,
     this.hlbBuildings = const [],
     this.hlbLandmarks = const [],
+    this.hlbLineFeatures = const [],
+    this.lineDraftPoints = const [],
     this.showHlbMarkings = true,
     this.walkPath = const [],
     this.showWalkPath = true,
@@ -43,6 +45,7 @@ class MissionMapCanvas extends StatelessWidget {
     this.lockCameraGestures = false,
     this.onRouteLoaded,
     this.onMapLongPress,
+    this.onMapTap,
     this.fineTuningLandmarkId,
     this.fineTuningLandmarkPosition,
     this.onLandmarkDrag,
@@ -67,6 +70,8 @@ class MissionMapCanvas extends StatelessWidget {
   final bool showDraftPins;
   final List<MissionHlbBuildingPin> hlbBuildings;
   final List<MissionHlbLandmarkPin> hlbLandmarks;
+  final List<MissionMapLineFeature> hlbLineFeatures;
+  final List<gmaps.LatLng> lineDraftPoints;
   final bool showHlbMarkings;
   final List<GpsPoint> walkPath;
   final bool showWalkPath;
@@ -80,6 +85,7 @@ class MissionMapCanvas extends StatelessWidget {
   final bool lockCameraGestures;
   final ValueChanged<DirectionsRoute?>? onRouteLoaded;
   final void Function(gmaps.LatLng position)? onMapLongPress;
+  final void Function(gmaps.LatLng position)? onMapTap;
   final String? fineTuningLandmarkId;
   final gmaps.LatLng? fineTuningLandmarkPosition;
   final void Function(String landmarkId, gmaps.LatLng position)? onLandmarkDrag;
@@ -105,6 +111,8 @@ class MissionMapCanvas extends StatelessWidget {
         showDraftPins: showDraftPins,
         hlbBuildings: hlbBuildings,
         hlbLandmarks: hlbLandmarks,
+        hlbLineFeatures: hlbLineFeatures,
+        lineDraftPoints: lineDraftPoints,
         showHlbMarkings: showHlbMarkings,
         walkPath: walkPath,
         showWalkPath: showWalkPath,
@@ -122,6 +130,7 @@ class MissionMapCanvas extends StatelessWidget {
         lockCameraGestures: lockCameraGestures,
         onRouteLoaded: onRouteLoaded,
         onMapLongPress: onMapLongPress,
+        onMapTap: onMapTap,
         fineTuningLandmarkId: fineTuningLandmarkId,
         fineTuningLandmarkPosition: fineTuningLandmarkPosition,
         onLandmarkDrag: onLandmarkDrag,

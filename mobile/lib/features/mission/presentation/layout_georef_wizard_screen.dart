@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/config/app_config.dart';
+import '../../../core/network/network_errors.dart';
 import '../../../core/storage/mission_layout_storage.dart';
 import '../../../core/maps/google_directions_service.dart';
 import '../../../core/providers/providers.dart';
@@ -29,6 +30,7 @@ import 'landmark_verification_panel.dart';
 import '../data/layout_georef_service.dart';
 import '../data/mission_local_first_service.dart';
 import '../data/mission_map_helpers.dart';
+import '../data/satellite_align_math.dart';
 import '../models/layout_georef_models.dart';
 import '../widgets/boundary_corner_adjust_map.dart';
 import '../widgets/bearing_arrow.dart';
@@ -37,13 +39,14 @@ import '../widgets/mission_map_canvas.dart';
 import '../widgets/mission_map_game_hud.dart';
 import '../widgets/mission_navigation_banner.dart';
 import '../widgets/mission_satellite_map.dart';
+import '../widgets/pdf_overlay_fine_tune_map.dart';
 import 'mission_providers.dart';
 
 final layoutGeorefApiProvider = Provider<LayoutGeorefApiService>((ref) {
   return LayoutGeorefApiService(apiClient: ref.watch(apiClientProvider));
 });
 
-enum _WizardPhase { upload, analyzing, pdfEditor, verifyLandmarks, mapExperience, adjust }
+enum _WizardPhase { upload, analyzing, pdfEditor, verifyLandmarks, mapExperience, adjust, fineTune }
 
 enum _AdjustFocus { pdfOverlay, boundary }
 
@@ -120,6 +123,8 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
   var _pdfRetraceMode = false;
   ImageBounds? _pdfOverlayBase;
   ImageBounds? _pdfOverlayWorking;
+  ImageBounds? _fineTuneBounds;
+  var _pdfMaskOutsideBoundary = false;
   var _pdfNudgeMeters = 1.0;
   var _pdfScaleStepPct = 1.0;
   var _pdfRotateStepDeg = 0.5;
@@ -188,11 +193,13 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
     final h = MediaQuery.sizeOf(context).height;
     var reserved = 0.0;
     if (_phase == _WizardPhase.mapExperience && _showReviewSheet) {
-      reserved += h * 0.32;
+      reserved += h * 0.38;
     } else if (_phase == _WizardPhase.mapExperience &&
         _boundaryComplete &&
         AppConfig.hasGoogleMaps) {
       reserved += 88;
+    } else if (_phase == _WizardPhase.fineTune) {
+      reserved += 168;
     } else if (_phase == _WizardPhase.adjust) {
       reserved += _pdfOverlayLocked && _adjustFocus == _AdjustFocus.boundary ? 132 : 220;
     }
@@ -244,6 +251,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
   @override
   Widget build(BuildContext context) {
     final fullScreenMap = (_phase == _WizardPhase.adjust ||
+            _phase == _WizardPhase.fineTune ||
             (_phase == _WizardPhase.mapExperience && !_showReviewSheet) ||
             _phase == _WizardPhase.pdfEditor) &&
         _error == null;
@@ -281,7 +289,9 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
         children: [
           if (_loadingAlignmentRestart)
             const Center(child: CircularProgressIndicator(color: Color(0xFF00E676)))
-          else if (_phase == _WizardPhase.mapExperience || _phase == _WizardPhase.adjust)
+          else if (_phase == _WizardPhase.mapExperience ||
+              _phase == _WizardPhase.adjust ||
+              _phase == _WizardPhase.fineTune)
             _satelliteBody()
           else
             switch (_phase) {
@@ -306,6 +316,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       _WizardPhase.verifyLandmarks => 'Verify Landmarks',
       _WizardPhase.mapExperience => 'Your HLB Area',
       _WizardPhase.adjust => 'Adjust Alignment',
+      _WizardPhase.fineTune => 'Fine tune overlay',
     };
   }
 
@@ -402,7 +413,13 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
             ),
             if (_error != null) ...[
               const SizedBox(height: 20),
-              ElevatedButton(onPressed: () => setState(() => _phase = _WizardPhase.upload), child: const Text('Try Again')),
+              ElevatedButton(
+                onPressed: () => setState(() {
+                  _error = null;
+                  _phase = _WizardPhase.upload;
+                }),
+                child: const Text('Try Again'),
+              ),
             ],
           ],
         ),
@@ -413,6 +430,9 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
   Widget _satelliteBody() {
     if (_phase == _WizardPhase.adjust) {
       return _adjustBody();
+    }
+    if (_phase == _WizardPhase.fineTune) {
+      return _fineTuneBody();
     }
 
     final gps = position;
@@ -1017,6 +1037,198 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
     });
   }
 
+  void _beginFineTune() {
+    final bounds = _imageBounds;
+    final path = _layoutImageUrl;
+    if (bounds == null || path == null || path.isEmpty) return;
+    setState(() {
+      _phase = _WizardPhase.fineTune;
+      _showReviewSheet = false;
+      _fineTuneBounds = bounds;
+      _pdfMaskOutsideBoundary = false;
+    });
+  }
+
+  void _cancelFineTune() {
+    setState(() {
+      _phase = _WizardPhase.mapExperience;
+      _fineTuneBounds = null;
+      _showReviewSheet = true;
+    });
+  }
+
+  Future<void> _applyFineTune() async {
+    final bounds = _fineTuneBounds;
+    final intel = _intelligence;
+    if (bounds == null || intel == null) return;
+
+    final uvRing = _uvRingFromIntelligence();
+    final newBoundary = uvRing.length >= 3
+        ? SatelliteAlignMath.gpsBoundaryFromUvRing(bounds, uvRing)
+        : intel.gpsBoundary;
+
+    final raw = Map<String, dynamic>.from(intel.raw ?? {});
+    raw['imageBounds'] = bounds.toJson();
+    final alignment = Map<String, dynamic>.from(raw['alignment'] as Map? ?? {});
+    alignment['imageBounds'] = bounds.toJson();
+    raw['alignment'] = alignment;
+    raw['boundary'] = {
+      ...(raw['boundary'] as Map<String, dynamic>? ?? {}),
+      'gpsRing': newBoundary.map((p) => p.toJson()).toList(),
+    };
+
+    final updatedIntel = MissionIntelligencePackage.fromJson(raw);
+
+    if (AppConfig.useLocalImport) {
+      await _localImport.saveGpsBoundary(widget.ebId, newBoundary);
+    } else if (intel.gpsBoundary.isNotEmpty) {
+      await _api.saveGpsBoundary(widget.ebId, newBoundary);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _intelligence = updatedIntel;
+      _imageBounds = bounds;
+      _baseBounds = bounds;
+      _fineTuneBounds = null;
+      _phase = _WizardPhase.mapExperience;
+      _showReviewSheet = true;
+      _placementNotice = 'PDF overlay fine-tuned on satellite.';
+    });
+  }
+
+  void _onFineTuneCornerDragged(int cornerIndex, LatLng position) {
+    final bounds = _fineTuneBounds;
+    if (bounds == null) return;
+    setState(() {
+      _fineTuneBounds = SatelliteAlignMath.resizeFromCornerDrag(bounds, cornerIndex, position);
+    });
+  }
+
+  void _onFineTuneEdgeDragged(int edgeIndex, LatLng position) {
+    final bounds = _fineTuneBounds;
+    if (bounds == null) return;
+    setState(() {
+      _fineTuneBounds = SatelliteAlignMath.rotateFromEdgeDrag(bounds, edgeIndex, position);
+    });
+  }
+
+  void _onFineTuneCenterDragged(LatLng position) {
+    final bounds = _fineTuneBounds;
+    if (bounds == null) return;
+    setState(() {
+      _fineTuneBounds = SatelliteAlignMath.shiftBoundsToCenter(bounds, position);
+    });
+  }
+
+  Widget _fineTuneBody() {
+    if (!AppConfig.hasGoogleMaps) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Fine tune requires Google Maps. Add GOOGLE_MAPS_API_KEY to local.properties.',
+            style: TextStyle(color: Colors.orange.shade200),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    final bounds = _fineTuneBounds;
+    final path = _layoutImageUrl;
+    final boundary = _intelligence?.gpsBoundary ?? [];
+    if (bounds == null || path == null || boundary.length < 3) {
+      return const Center(child: Text('Overlay not ready for fine tune'));
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        PdfOverlayFineTuneMap(
+          boundary: boundary,
+          pdfBounds: bounds,
+          pdfImageUrl: path,
+          pdfOpacity: _opacity,
+          maskOutsideBoundary: _pdfMaskOutsideBoundary,
+          boundaryUvRing: _uvRingFromIntelligence(),
+          onCornerDragged: _onFineTuneCornerDragged,
+          onEdgeDragged: _onFineTuneEdgeDragged,
+          onCenterDragged: _onFineTuneCenterDragged,
+        ),
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: MissionMapHudStatus(
+                title: 'Fine tune PDF overlay',
+                subtitle: 'Cyan center moves · orange corners resize · purple edges rotate',
+                icon: Icons.tune,
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF14141E),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, -3))],
+            ),
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.paddingOf(context).bottom),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                CheckboxListTile(
+                  value: _pdfMaskOutsideBoundary,
+                  onChanged: (v) => setState(() => _pdfMaskOutsideBoundary = v ?? false),
+                  activeColor: const Color(0xFF42A5F5),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text(
+                    'Hide PDF outside HLB boundary',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    'Makes area outside the boundary transparent so satellite shows through.',
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _cancelFineTune,
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _applyFineTune,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00E676),
+                          foregroundColor: Colors.black,
+                        ),
+                        child: const Text('Done', style: TextStyle(fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   void _selectAdjustCorner(int index) {
     if (_adjustLockedCount >= 2) return;
     if (index == _lockedCorner1Index || index == _lockedCorner2Index) return;
@@ -1103,9 +1315,9 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
     final ebCode = _hlbDisplayCode();
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.32,
-      minChildSize: 0.24,
-      maxChildSize: 0.55,
+      initialChildSize: 0.38,
+      minChildSize: 0.28,
+      maxChildSize: 0.62,
       builder: (context, scrollController) {
         return Container(
           decoration: const BoxDecoration(
@@ -1170,6 +1382,23 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
                   ),
                   child: const Text('LOOKS CORRECT', style: TextStyle(fontWeight: FontWeight.w800)),
                 ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 44,
+                child: OutlinedButton(
+                  onPressed: AppConfig.hasGoogleMaps ? _beginFineTune : null,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF42A5F5),
+                    side: const BorderSide(color: Color(0xFF42A5F5)),
+                  ),
+                  child: const Text('FINE TUNE', style: TextStyle(fontWeight: FontWeight.w800)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Drag center to move, corner handles to resize, edge handles to rotate the PDF overlay.',
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
               ),
             ],
           ),
@@ -1607,7 +1836,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       _pins = [];
     });
 
-    if (AppConfig.standaloneMode) {
+    if (AppConfig.useLocalImport) {
       setState(() {
         _phase = _WizardPhase.pdfEditor;
         _preparingPdf = true;
@@ -1619,7 +1848,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
 
     try {
       final pos = await _resolveUploadPosition();
-      if (AppConfig.standaloneMode) {
+      if (AppConfig.useLocalImport) {
         final manual = await _localImport.prepareManualUpload(
           ebId: widget.ebId,
           mapFile: mapFile,
@@ -1635,6 +1864,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
             ebId: widget.ebId,
             ebCode: manual.metadata!.ebNo!,
           );
+          await _local.savePdfMetadata(widget.ebId, manual.metadata!.toJson());
         }
         if (!mounted) return;
         setState(() {
@@ -1669,9 +1899,9 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       _analysisTimer?.cancel();
       if (!mounted) return;
       setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
+        _error = friendlyNetworkError(e);
         _preparingPdf = false;
-        if (AppConfig.standaloneMode) _phase = _WizardPhase.upload;
+        if (AppConfig.useLocalImport) _phase = _WizardPhase.upload;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_error ?? 'Upload failed')),
@@ -1790,7 +2020,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
 
     final updatedIntel = MissionIntelligencePackage.fromJson(raw);
 
-    if (AppConfig.standaloneMode) {
+    if (AppConfig.useLocalImport) {
       await _localImport.saveGpsBoundary(widget.ebId, newBoundary);
     } else if (intel.gpsBoundary.isNotEmpty) {
       await _api.saveGpsBoundary(widget.ebId, newBoundary);
@@ -1823,7 +2053,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
     });
 
     try {
-      if (AppConfig.standaloneMode) {
+      if (AppConfig.useLocalImport) {
         final state = await _local.getRawState(widget.ebId);
         final raw = _intelligence?.raw;
         if (raw == null || _intelligence!.gpsBoundary.length < 3) {
@@ -1852,6 +2082,9 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
               widget.ebId,
               status: 'published',
             );
+        if (AppConfig.useFirebase) {
+          await _local.syncInBackground(widget.ebId);
+        }
       } else {
         await _api.confirmIntelligence(widget.ebId);
         await _api.finalize(widget.ebId);
@@ -1872,7 +2105,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       }
     } catch (e) {
       setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
+        _error = friendlyNetworkError(e);
         _phase = _WizardPhase.mapExperience;
         _showReviewSheet = true;
         _mapLayersDrawerOpen = false;

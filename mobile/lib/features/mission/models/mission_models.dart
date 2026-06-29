@@ -450,6 +450,13 @@ class DraftHlbMap {
     required this.landmarks,
     required this.walkPath,
     required this.serpentineOrder,
+    this.lineFeatures = const [],
+    this.serpentineArrows = const [],
+    this.titleBlock,
+    this.footerBlock = const DraftHlbFooterBlock(),
+    this.annotations = const [],
+    this.startPoint,
+    this.endPoint,
     this.isOfficialBoundary = false,
   });
 
@@ -461,6 +468,13 @@ class DraftHlbMap {
   final List<DraftMapLandmark> landmarks;
   final List<MapPoint> walkPath;
   final List<SerpentineEntry> serpentineOrder;
+  final List<DraftMapLineFeature> lineFeatures;
+  final List<SerpentineArrow> serpentineArrows;
+  final DraftHlbTitleBlock? titleBlock;
+  final DraftHlbFooterBlock footerBlock;
+  final List<DraftMapAnnotation> annotations;
+  final DraftMapEndpoint? startPoint;
+  final DraftMapEndpoint? endPoint;
   final bool isOfficialBoundary;
 
   factory DraftHlbMap.fromJson(Map<String, dynamic> json) {
@@ -483,6 +497,27 @@ class DraftHlbMap {
       serpentineOrder: (json['serpentineOrder'] as List<dynamic>? ?? [])
           .map((e) => SerpentineEntry.fromJson(e as Map<String, dynamic>))
           .toList(),
+      lineFeatures: (json['lineFeatures'] as List<dynamic>? ?? [])
+          .map((e) => DraftMapLineFeature.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      serpentineArrows: (json['serpentineArrows'] as List<dynamic>? ?? [])
+          .map((e) => SerpentineArrow.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      titleBlock: json['titleBlock'] != null
+          ? DraftHlbTitleBlock.fromJson(json['titleBlock'] as Map<String, dynamic>)
+          : null,
+      footerBlock: json['footerBlock'] != null
+          ? DraftHlbFooterBlock.fromJson(json['footerBlock'] as Map<String, dynamic>)
+          : const DraftHlbFooterBlock(),
+      annotations: (json['annotations'] as List<dynamic>? ?? [])
+          .map((e) => DraftMapAnnotation.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      startPoint: json['startPoint'] != null
+          ? DraftMapEndpoint.fromJson(json['startPoint'] as Map<String, dynamic>)
+          : null,
+      endPoint: json['endPoint'] != null
+          ? DraftMapEndpoint.fromJson(json['endPoint'] as Map<String, dynamic>)
+          : null,
       isOfficialBoundary: json['isOfficialBoundary'] as bool? ?? false,
     );
   }
@@ -561,6 +596,205 @@ class SerpentineEntry {
       label: json['label'] as String,
     );
   }
+}
+
+class DraftMapLineFeature {
+  const DraftMapLineFeature({
+    required this.id,
+    required this.segmentType,
+    required this.points,
+    this.name,
+    this.labelRotation = 0,
+  });
+
+  final String id;
+  final String segmentType;
+  final String? name;
+  final List<MapPoint> points;
+  final double labelRotation;
+
+  factory DraftMapLineFeature.fromJson(Map<String, dynamic> json) {
+    return DraftMapLineFeature(
+      id: json['id'] as String,
+      segmentType: json['segmentType'] as String? ?? 'pucca_road',
+      name: json['name'] as String?,
+      labelRotation: (json['labelRotation'] as num?)?.toDouble() ?? 0,
+      points: (json['points'] as List<dynamic>? ?? [])
+          .map((e) => MapPoint.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+class SerpentineArrow {
+  const SerpentineArrow({
+    required this.fromX,
+    required this.fromY,
+    required this.toX,
+    required this.toY,
+    required this.sequence,
+  });
+
+  final double fromX;
+  final double fromY;
+  final double toX;
+  final double toY;
+  final int sequence;
+
+  factory SerpentineArrow.fromJson(Map<String, dynamic> json) {
+    return SerpentineArrow(
+      fromX: (json['fromX'] as num).toDouble(),
+      fromY: (json['fromY'] as num).toDouble(),
+      toX: (json['toX'] as num).toDouble(),
+      toY: (json['toY'] as num).toDouble(),
+      sequence: json['sequence'] as int,
+    );
+  }
+}
+
+class DraftHlbTitleBlock {
+  const DraftHlbTitleBlock({
+    required this.ebCode,
+    this.stateName,
+    this.stateCode,
+    this.district,
+    this.districtCode,
+    this.subDistrict,
+    this.subDistrictCode,
+    this.townVillage,
+    this.townCode,
+    this.wardNo,
+    this.subBlockNo,
+  });
+
+  final String ebCode;
+  final String? stateName;
+  final String? stateCode;
+  final String? district;
+  final String? districtCode;
+  final String? subDistrict;
+  final String? subDistrictCode;
+  final String? townVillage;
+  final String? townCode;
+  final String? wardNo;
+  final String? subBlockNo;
+
+  String _codeLabel(String? name, String? code) {
+    if (name == null || name.isEmpty) return code ?? '';
+    if (code == null || code.isEmpty) return name;
+    return '$name (Code: $code)';
+  }
+
+  List<String> get lines {
+    final out = <String>[];
+    if (stateName != null && stateName!.isNotEmpty) {
+      out.add('State/UT: ${_codeLabel(stateName, stateCode)}');
+    }
+    if (district != null && district!.isNotEmpty) {
+      out.add('District: ${_codeLabel(district, districtCode)}');
+    }
+    if (subDistrict != null && subDistrict!.isNotEmpty) {
+      out.add('Tehsil/Taluk/Block: ${_codeLabel(subDistrict, subDistrictCode)}');
+    }
+    if (townVillage != null && townVillage!.isNotEmpty) {
+      out.add('Town/Village: ${_codeLabel(townVillage, townCode)}');
+    }
+    if (wardNo != null && wardNo!.isNotEmpty) out.add('Ward Code No.: $wardNo');
+    final ebLine = subBlockNo != null && subBlockNo!.isNotEmpty
+        ? 'EB No. $ebCode  ·  Sub-Block No. $subBlockNo'
+        : 'Enumeration Block No.: $ebCode';
+    out.add(ebLine);
+    return out;
+  }
+
+  factory DraftHlbTitleBlock.fromJson(Map<String, dynamic> json) {
+    return DraftHlbTitleBlock(
+      ebCode: json['ebCode'] as String,
+      stateName: json['stateName'] as String?,
+      stateCode: json['stateCode'] as String?,
+      district: json['district'] as String?,
+      districtCode: json['districtCode'] as String?,
+      subDistrict: json['subDistrict'] as String?,
+      subDistrictCode: json['subDistrictCode'] as String?,
+      townVillage: json['townVillage'] as String?,
+      townCode: json['townCode'] as String?,
+      wardNo: json['wardNo'] as String?,
+      subBlockNo: json['subBlockNo'] as String?,
+    );
+  }
+}
+
+class DraftHlbFooterBlock {
+  const DraftHlbFooterBlock({
+    this.enumeratorName,
+    this.enumeratorDate,
+    this.supervisorName,
+    this.supervisorDate,
+  });
+
+  final String? enumeratorName;
+  final String? enumeratorDate;
+  final String? supervisorName;
+  final String? supervisorDate;
+
+  factory DraftHlbFooterBlock.fromJson(Map<String, dynamic> json) => DraftHlbFooterBlock(
+        enumeratorName: json['enumeratorName'] as String?,
+        enumeratorDate: json['enumeratorDate'] as String?,
+        supervisorName: json['supervisorName'] as String?,
+        supervisorDate: json['supervisorDate'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        if (enumeratorName != null) 'enumeratorName': enumeratorName,
+        if (enumeratorDate != null) 'enumeratorDate': enumeratorDate,
+        if (supervisorName != null) 'supervisorName': supervisorName,
+        if (supervisorDate != null) 'supervisorDate': supervisorDate,
+      };
+}
+
+class DraftMapAnnotation {
+  const DraftMapAnnotation({
+    required this.text,
+    required this.annotationType,
+    required this.mapX,
+    required this.mapY,
+    this.rotationDegrees = 0,
+  });
+
+  final String text;
+  final String annotationType;
+  final double mapX;
+  final double mapY;
+  final double rotationDegrees;
+
+  factory DraftMapAnnotation.fromJson(Map<String, dynamic> json) => DraftMapAnnotation(
+        text: json['text'] as String,
+        annotationType: json['annotationType'] as String? ?? 'custom',
+        mapX: (json['mapX'] as num).toDouble(),
+        mapY: (json['mapY'] as num).toDouble(),
+        rotationDegrees: (json['rotationDegrees'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+class DraftMapEndpoint {
+  const DraftMapEndpoint({
+    required this.label,
+    required this.mapX,
+    required this.mapY,
+    this.buildingNumber,
+  });
+
+  final String label;
+  final double mapX;
+  final double mapY;
+  final int? buildingNumber;
+
+  factory DraftMapEndpoint.fromJson(Map<String, dynamic> json) => DraftMapEndpoint(
+        label: json['label'] as String,
+        mapX: (json['mapX'] as num).toDouble(),
+        mapY: (json['mapY'] as num).toDouble(),
+        buildingNumber: json['buildingNumber'] as int?,
+      );
 }
 
 class ZeroExclusionValidation {

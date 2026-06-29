@@ -143,6 +143,82 @@ class SatelliteAlignMath {
   static ImageBounds rotateBounds(ImageBounds bounds, double deltaDegrees) =>
       bounds.copyWith(rotation: normalizeMapBearing(bounds.rotation + deltaDegrees));
 
+  static const _cornerUvs = <(double u, double v)>[(0, 0), (1, 0), (1, 1), (0, 1)];
+  static const _edgeUvs = <(double u, double v)>[(0.5, 0), (1, 0.5), (0.5, 1), (0, 0.5)];
+  static const _edgeBaseBearingDeg = [0.0, 90.0, 180.0, 270.0];
+
+  /// PDF overlay corner handles (NW, NE, SE, SW) in GPS.
+  static List<LatLng> overlayCornerPositions(ImageBounds bounds) => [
+        for (final uv in _cornerUvs) imageUvToLatLngRotated(uv.$1, uv.$2, bounds),
+      ];
+
+  /// PDF overlay edge midpoints (N, E, S, W) in GPS — used for rotation.
+  static List<LatLng> overlayEdgePositions(ImageBounds bounds) => [
+        for (final uv in _edgeUvs) imageUvToLatLngRotated(uv.$1, uv.$2, bounds),
+      ];
+
+  static ({double north, double east}) _latLngToLocalM(LatLng center, LatLng point) {
+    final dNorth = (point.latitude - center.latitude) * _mPerDegLat;
+    final mPerDegLng = _mPerDegLat * math.cos(center.latitude * math.pi / 180);
+    final dEast = (point.longitude - center.longitude) * mPerDegLng;
+    return (north: dNorth, east: dEast);
+  }
+
+  static ({double north, double east}) _rotateLocal(
+    ({double north, double east}) v,
+    double degrees,
+  ) {
+    final rad = degrees * math.pi / 180;
+    final cosR = math.cos(rad);
+    final sinR = math.sin(rad);
+    return (
+      north: v.north * cosR - v.east * sinR,
+      east: v.north * sinR + v.east * cosR,
+    );
+  }
+
+  static double bearingDegrees(LatLng from, LatLng to) {
+    final local = _latLngToLocalM(from, to);
+    return normalizeMapBearing(math.atan2(local.east, local.north) * 180 / math.pi);
+  }
+
+  /// Resize overlay keeping the opposite corner fixed.
+  static ImageBounds resizeFromCornerDrag(ImageBounds bounds, int cornerIndex, LatLng newCorner) {
+    final oppIdx = (cornerIndex + 2) % 4;
+    final opp = imageUvToLatLngRotated(_cornerUvs[oppIdx].$1, _cornerUvs[oppIdx].$2, bounds);
+    final center = LatLng(
+      (newCorner.latitude + opp.latitude) / 2,
+      (newCorner.longitude + opp.longitude) / 2,
+    );
+    final newLocal = _rotateLocal(_latLngToLocalM(center, newCorner), -bounds.rotation);
+    const minHalfM = 25.0;
+    final halfW = math.max(newLocal.east.abs(), minHalfM);
+    final halfH = math.max(newLocal.north.abs(), minHalfM);
+    final resized = boundsFromCenter(center.latitude, center.longitude, halfW * 2, halfH * 2);
+    return resized.copyWith(rotation: bounds.rotation);
+  }
+
+  /// Rotate overlay so the dragged edge midpoint follows [dragPosition].
+  static ImageBounds rotateFromEdgeDrag(ImageBounds bounds, int edgeIndex, LatLng dragPosition) {
+    final center = bounds.center;
+    final bearing = bearingDegrees(center, dragPosition);
+    final newRotation = normalizeMapBearing(bearing - _edgeBaseBearingDeg[edgeIndex]);
+    return bounds.copyWith(rotation: newRotation);
+  }
+
+  /// Move overlay so its center sits at [newCenter].
+  static ImageBounds shiftBoundsToCenter(ImageBounds bounds, LatLng newCenter) {
+    final old = bounds.center;
+    final dLat = newCenter.latitude - old.latitude;
+    final dLng = newCenter.longitude - old.longitude;
+    return bounds.copyWith(
+      north: bounds.north + dLat,
+      south: bounds.south + dLat,
+      east: bounds.east + dLng,
+      west: bounds.west + dLng,
+    );
+  }
+
   /// Align detected boundary UV ring to enumerator GPS seed (mirrors backend mission-intelligence).
   static ({ImageBounds imageBounds, List<GpsPoint> gpsBoundary}) autoAlignFromBoundary(
     List<({double x, double y})> boundaryUv,

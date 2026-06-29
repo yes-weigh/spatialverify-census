@@ -36,6 +36,9 @@ class AppConfig {
     defaultValue: true,
   );
 
+  /// Local PDF import + on-device CV (standalone and Firebase modes).
+  static bool get useLocalImport => !useRestBackend;
+
   /// Legacy REST API mode when Firebase is off and standalone is off.
   static bool get useRestBackend => !standaloneMode && !useFirebase;
 

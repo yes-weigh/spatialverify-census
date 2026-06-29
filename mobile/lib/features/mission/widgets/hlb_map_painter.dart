@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/mission_models.dart';
 import '../data/hlb_feature_painter.dart';
 
-/// Census HLB layout map renderer with official legend (§4.4.3).
+/// Census HLB layout map renderer — Census 2027 sample form layout.
 class HlbMapPainter extends CustomPainter {
   HlbMapPainter({
     required this.mapData,
@@ -10,6 +10,7 @@ class HlbMapPainter extends CustomPainter {
     this.selectedGapId,
     this.highlightGaps = false,
     this.showLegend = true,
+    this.showFooter = true,
   });
 
   final DraftHlbMap mapData;
@@ -17,42 +18,59 @@ class HlbMapPainter extends CustomPainter {
   final String? selectedGapId;
   final bool highlightGaps;
   final bool showLegend;
+  final bool showFooter;
 
-  static const _pad = 24.0;
-  static const _legendW = 92.0;
+  static const _pad = 20.0;
+  static const _legendW = 108.0;
+  static const _titleH = 88.0;
+  static const _footerH = 58.0;
 
   @override
   void paint(Canvas canvas, Size size) {
     final legendW = showLegend ? _legendW : 0.0;
+    final titleH = mapData.titleBlock != null ? _titleH : 0.0;
+    final footerH = showFooter ? _footerH : 0.0;
     final mapLeft = _pad + legendW;
+    final mapTop = _pad + titleH;
     final drawW = size.width - mapLeft - _pad;
-    final drawH = size.height - _pad * 2;
+    final drawH = size.height - mapTop - _pad - footerH;
 
-    Offset toScreen(double x, double y) => Offset(mapLeft + x * drawW, _pad + y * drawH);
+    Offset toScreen(double x, double y) => Offset(mapLeft + x * drawW, mapTop + y * drawH);
 
     if (showLegend) {
       HlbFeaturePainter.drawLegend(
         canvas,
-        Rect.fromLTWH(_pad, _pad, _legendW, drawH),
-        landmarkTypesOnMap: mapData.landmarks.map((lm) => lm.type),
+        Rect.fromLTWH(_pad, mapTop, _legendW, drawH),
+        landmarkTypesOnMap: {
+          ...mapData.landmarks.map((lm) => lm.type),
+          ...mapData.lineFeatures.map((lf) => lf.segmentType),
+        },
+      );
+    }
+
+    if (mapData.titleBlock != null) {
+      HlbFeaturePainter.drawTitleBlock(
+        canvas,
+        Rect.fromLTWH(mapLeft, _pad, drawW, titleH - 4),
+        mapData.titleBlock!,
       );
     }
 
     canvas.drawRect(
-      Rect.fromLTWH(mapLeft, _pad, drawW, drawH),
+      Rect.fromLTWH(mapLeft, mapTop, drawW, drawH),
       Paint()..color = const Color(0xFFFFFDE7),
     );
     canvas.drawRect(
-      Rect.fromLTWH(mapLeft, _pad, drawW, drawH),
+      Rect.fromLTWH(mapLeft, mapTop, drawW, drawH),
       Paint()
         ..color = Colors.black54
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
     );
 
-    final northTip = Offset(size.width - 36, _pad + 12);
-    canvas.drawLine(northTip + const Offset(0, 16), northTip, Paint()..color = Colors.black..strokeWidth = 2);
-    _drawText(canvas, 'N', northTip + const Offset(-4, -14), 11, FontWeight.bold);
+    final northTip = Offset(size.width - 32, mapTop + 10);
+    canvas.drawLine(northTip + const Offset(0, 14), northTip, Paint()..color = Colors.black..strokeWidth = 2);
+    HlbFeaturePainter.drawAngledText(canvas, northTip + const Offset(-4, -12), 'N', size: 10, weight: FontWeight.bold);
 
     if (mapData.walkPath.length >= 2) {
       final path = Path();
@@ -67,8 +85,8 @@ class HlbMapPainter extends CustomPainter {
       canvas.drawPath(
         path,
         Paint()
-          ..color = Colors.blue.withValues(alpha: 0.35)
-          ..strokeWidth = 2
+          ..color = Colors.blue.withValues(alpha: 0.25)
+          ..strokeWidth = 1.5
           ..style = PaintingStyle.stroke,
       );
     }
@@ -84,28 +102,88 @@ class HlbMapPainter extends CustomPainter {
         }
       }
       if (mapData.boundaryClosed && mapData.boundary.length >= 3) path.close();
-      final boundaryColor = mapData.isOfficialBoundary ? const Color(0xFF00E676) : Colors.red;
-      canvas.drawPath(path, Paint()..color = boundaryColor.withValues(alpha: 0.15)..style = PaintingStyle.fill);
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = boundaryColor
-          ..strokeWidth = mapData.isOfficialBoundary ? 3 : 2
-          ..style = PaintingStyle.stroke,
+      if (mapData.isOfficialBoundary) {
+        HlbFeaturePainter.drawOfficialBoundary(canvas, path, closed: mapData.boundaryClosed);
+      } else {
+        canvas.drawPath(path, Paint()..color = Colors.red.withValues(alpha: 0.12)..style = PaintingStyle.fill);
+        canvas.drawPath(
+          path,
+          Paint()
+            ..color = Colors.red
+            ..strokeWidth = 2
+            ..style = PaintingStyle.stroke,
+        );
+      }
+    }
+
+    for (final lf in mapData.lineFeatures) {
+      if (lf.points.length < 2) continue;
+      final pts = lf.points.map((p) => toScreen(p.x, p.y)).toList();
+      HlbFeaturePainter.drawLineFeature(canvas, pts, lf.segmentType);
+      if (lf.name != null && lf.name!.isNotEmpty && pts.length >= 2) {
+        final mid = pts[pts.length ~/ 2];
+        HlbFeaturePainter.drawAngledText(
+          canvas,
+          mid,
+          lf.name!,
+          rotationDegrees: lf.labelRotation,
+          size: 7.5,
+          weight: FontWeight.w600,
+        );
+      }
+    }
+
+    for (final ann in mapData.annotations) {
+      HlbFeaturePainter.drawAngledText(
+        canvas,
+        toScreen(ann.mapX, ann.mapY),
+        ann.text,
+        rotationDegrees: ann.rotationDegrees,
+        size: ann.annotationType == 'road_name' ? 7.5 : 7,
+        weight: FontWeight.w600,
+        color: ann.annotationType == 'adjacent_hlb' ? const Color(0xFF1565C0) : Colors.black87,
       );
     }
 
     for (final lm in mapData.landmarks) {
       final p = toScreen(lm.mapX, lm.mapY);
       HlbFeaturePainter.drawLandmark(canvas, p, lm.type, scale: 0.95);
-      final shortName = lm.name.length > 10 ? lm.name.substring(0, 10) : lm.name;
-      _drawText(canvas, shortName, p + const Offset(-14, -16), 7.5, FontWeight.w500);
+      if (lm.name.isNotEmpty) {
+        HlbFeaturePainter.drawAngledText(canvas, p + const Offset(-12, -14), lm.name, size: 7, weight: FontWeight.w500);
+      }
     }
 
     for (final b in mapData.buildings) {
       final p = toScreen(b.mapX, b.mapY);
       HlbFeaturePainter.drawBuilding(canvas, p, b.buildingType);
-      _drawText(canvas, b.label, p + const Offset(-16, -22), 9, FontWeight.w600);
+      HlbFeaturePainter.drawAngledText(canvas, p + const Offset(-14, -20), b.label, size: 8.5, weight: FontWeight.w700);
+    }
+
+    for (final arrow in mapData.serpentineArrows) {
+      HlbFeaturePainter.drawSerpentineArrow(
+        canvas,
+        toScreen(arrow.fromX, arrow.fromY),
+        toScreen(arrow.toX, arrow.toY),
+      );
+    }
+
+    if (mapData.startPoint != null) {
+      final p = toScreen(mapData.startPoint!.mapX, mapData.startPoint!.mapY);
+      HlbFeaturePainter.drawEndpointLabel(
+        canvas,
+        p,
+        mapData.startPoint!.label,
+        mapData.startPoint!.buildingNumber?.toString() ?? '',
+      );
+    }
+    if (mapData.endPoint != null) {
+      final p = toScreen(mapData.endPoint!.mapX, mapData.endPoint!.mapY);
+      HlbFeaturePainter.drawEndpointLabel(
+        canvas,
+        p,
+        mapData.endPoint!.label,
+        mapData.endPoint!.buildingNumber?.toString() ?? '',
+      );
     }
 
     if (highlightGaps) {
@@ -126,7 +204,13 @@ class HlbMapPainter extends CustomPainter {
       }
     }
 
-    _drawText(canvas, 'HLB ${mapData.ebCode} — Layout map', Offset(mapLeft, 4), 12, FontWeight.bold);
+    if (showFooter) {
+      HlbFeaturePainter.drawFooterBlock(
+        canvas,
+        Rect.fromLTWH(mapLeft, mapTop + drawH + 4, drawW, footerH - 4),
+        mapData.footerBlock,
+      );
+    }
   }
 
   Color _severityColor(String severity) {
@@ -140,15 +224,11 @@ class HlbMapPainter extends CustomPainter {
     }
   }
 
-  void _drawText(Canvas canvas, String text, Offset offset, double size, FontWeight weight) {
-    final tp = TextPainter(
-      text: TextSpan(text: text, style: TextStyle(color: Colors.black87, fontSize: size, fontWeight: weight)),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    tp.paint(canvas, offset);
-  }
-
   @override
   bool shouldRepaint(covariant HlbMapPainter old) =>
-      old.mapData != mapData || old.gaps != gaps || old.selectedGapId != selectedGapId || old.showLegend != showLegend;
+      old.mapData != mapData ||
+      old.gaps != gaps ||
+      old.selectedGapId != selectedGapId ||
+      old.showLegend != showLegend ||
+      old.showFooter != showFooter;
 }

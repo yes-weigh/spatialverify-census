@@ -11,6 +11,7 @@ import '../../../core/storage/mission_layout_storage.dart';
 
 import '../models/layout_georef_models.dart';
 import 'boundary_rigid_align_math.dart';
+import 'pdf_layout_mask.dart';
 import 'satellite_align_math.dart';
 
 /// Local file path or http(s) URL for HLO layout overlay on flutter_map.
@@ -90,7 +91,11 @@ ImageBounds transformImageBounds(ImageBounds bounds, RigidBoundaryTransform tran
   );
 }
 
-Future<gmaps.BytesMapBitmap?> loadLayoutGroundOverlayBitmap(String urlOrPath) async {
+Future<gmaps.BytesMapBitmap?> loadLayoutGroundOverlayBitmap(
+  String urlOrPath, {
+  bool maskOutsideUvRing = false,
+  List<({double x, double y})> uvRing = const [],
+}) async {
   try {
     final lower = urlOrPath.toLowerCase();
     Uint8List? bytes;
@@ -106,6 +111,9 @@ Future<gmaps.BytesMapBitmap?> loadLayoutGroundOverlayBitmap(String urlOrPath) as
       bytes = await readMissionLayoutBytes(urlOrPath);
     }
     if (bytes == null || bytes.isEmpty) return null;
+    if (maskOutsideUvRing && uvRing.length >= 3) {
+      bytes = maskLayoutPngOutsideBoundary(bytes, uvRing);
+    }
     return gmaps.BytesMapBitmap(
       bytes,
       bitmapScaling: gmaps.MapBitmapScaling.none,

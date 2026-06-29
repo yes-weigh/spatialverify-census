@@ -13,6 +13,7 @@ class HlbLocalState {
     this.gapResolutions = const [],
     this.spatialNodes = const [],
     this.roadSegments = const [],
+    this.mapAnnotations = const [],
     this.ignoredSuggestions = const [],
     this.officialBoundary,
     this.boundaryAudit,
@@ -34,6 +35,7 @@ class HlbLocalState {
   final List<LocalGapResolution> gapResolutions;
   final List<LocalSpatialNode> spatialNodes;
   final List<LocalRoadSegment> roadSegments;
+  final List<LocalMapAnnotation> mapAnnotations;
   final List<LocalIgnoredSuggestion> ignoredSuggestions;
   final LocalOfficialBoundary? officialBoundary;
   final LocalBoundaryAudit? boundaryAudit;
@@ -53,6 +55,7 @@ class HlbLocalState {
     List<LocalGapResolution>? gapResolutions,
     List<LocalSpatialNode>? spatialNodes,
     List<LocalRoadSegment>? roadSegments,
+    List<LocalMapAnnotation>? mapAnnotations,
     List<LocalIgnoredSuggestion>? ignoredSuggestions,
     LocalOfficialBoundary? officialBoundary,
     LocalBoundaryAudit? boundaryAudit,
@@ -76,6 +79,7 @@ class HlbLocalState {
       gapResolutions: gapResolutions ?? this.gapResolutions,
       spatialNodes: spatialNodes ?? this.spatialNodes,
       roadSegments: roadSegments ?? this.roadSegments,
+      mapAnnotations: mapAnnotations ?? this.mapAnnotations,
       ignoredSuggestions: ignoredSuggestions ?? this.ignoredSuggestions,
       officialBoundary: clearOfficialBoundary ? null : (officialBoundary ?? this.officialBoundary),
       boundaryAudit: clearBoundaryAudit ? null : (boundaryAudit ?? this.boundaryAudit),
@@ -99,6 +103,7 @@ class HlbLocalState {
         'gapResolutions': gapResolutions.map((e) => e.toJson()).toList(),
         'spatialNodes': spatialNodes.map((e) => e.toJson()).toList(),
         'roadSegments': roadSegments.map((e) => e.toJson()).toList(),
+        'mapAnnotations': mapAnnotations.map((e) => e.toJson()).toList(),
         'ignoredSuggestions': ignoredSuggestions.map((e) => e.toJson()).toList(),
         'officialBoundary': officialBoundary?.toJson(),
         'boundaryAudit': boundaryAudit?.toJson(),
@@ -135,6 +140,9 @@ class HlbLocalState {
           .toList(),
       roadSegments: (json['roadSegments'] as List<dynamic>? ?? [])
           .map((e) => LocalRoadSegment.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+      mapAnnotations: (json['mapAnnotations'] as List<dynamic>? ?? [])
+          .map((e) => LocalMapAnnotation.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList(),
       ignoredSuggestions: (json['ignoredSuggestions'] as List<dynamic>? ?? [])
           .map((e) => LocalIgnoredSuggestion.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -513,15 +521,69 @@ class LocalSpatialNode {
       );
 }
 
+class LocalMapAnnotation {
+  LocalMapAnnotation({
+    required this.localId,
+    required this.text,
+    required this.annotationType,
+    required this.latitude,
+    required this.longitude,
+    required this.mapX,
+    required this.mapY,
+    this.rotationDegrees = 0,
+  });
+
+  final String localId;
+  final String text;
+  /// road_name | area_name | adjacent_hlb | custom
+  final String annotationType;
+  final double latitude;
+  final double longitude;
+  final double mapX;
+  final double mapY;
+  final double rotationDegrees;
+
+  Map<String, dynamic> toJson() => {
+        'localId': localId,
+        'text': text,
+        'annotationType': annotationType,
+        'latitude': latitude,
+        'longitude': longitude,
+        'mapX': mapX,
+        'mapY': mapY,
+        'rotationDegrees': rotationDegrees,
+      };
+
+  factory LocalMapAnnotation.fromJson(Map<String, dynamic> json) => LocalMapAnnotation(
+        localId: json['localId'] as String,
+        text: json['text'] as String,
+        annotationType: json['annotationType'] as String? ?? 'custom',
+        latitude: (json['latitude'] as num).toDouble(),
+        longitude: (json['longitude'] as num).toDouble(),
+        mapX: (json['mapX'] as num).toDouble(),
+        mapY: (json['mapY'] as num).toDouble(),
+        rotationDegrees: (json['rotationDegrees'] as num?)?.toDouble() ?? 0,
+      );
+}
+
 class LocalRoadSegment {
-  LocalRoadSegment({required this.localId, required this.points});
+  LocalRoadSegment({
+    required this.localId,
+    required this.points,
+    this.segmentType = 'pucca_road',
+    this.name,
+  });
 
   final String localId;
   final List<({double lat, double lng})> points;
+  final String segmentType;
+  final String? name;
 
   Map<String, dynamic> toJson() => {
         'localId': localId,
         'points': points.map((p) => {'lat': p.lat, 'lng': p.lng}).toList(),
+        'segmentType': segmentType,
+        if (name != null && name!.isNotEmpty) 'name': name,
       };
 
   factory LocalRoadSegment.fromJson(Map<String, dynamic> json) => LocalRoadSegment(
@@ -529,6 +591,11 @@ class LocalRoadSegment {
         points: (json['points'] as List<dynamic>)
             .map((p) => (lat: (p['lat'] as num).toDouble(), lng: (p['lng'] as num).toDouble()))
             .toList(),
+        segmentType: () {
+          final t = json['segmentType'] as String? ?? 'pucca_road';
+          return t == 'road' ? 'pucca_road' : t;
+        }(),
+        name: json['name'] as String?,
       );
 }
 

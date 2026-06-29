@@ -60,6 +60,21 @@ class MissionHlbLandmarkPin {
   final double longitude;
 }
 
+/// Line feature (road, canal, river, etc.) on the live mission map.
+class MissionMapLineFeature {
+  const MissionMapLineFeature({
+    required this.id,
+    required this.segmentType,
+    required this.points,
+    this.name,
+  });
+
+  final String id;
+  final String segmentType;
+  final String? name;
+  final List<GpsPoint> points;
+}
+
 List<({double x, double y})> parseUvRingFromJson(dynamic raw) {
   if (raw is! List) return [];
   return [
@@ -84,6 +99,7 @@ class MissionMapSession {
     this.draftPins = const [],
     this.hlbBuildings = const [],
     this.hlbLandmarks = const [],
+    this.hlbLineFeatures = const [],
     this.walkPath = const [],
     this.boundarySource,
   });
@@ -97,6 +113,7 @@ class MissionMapSession {
   final List<MissionDraftPin> draftPins;
   final List<MissionHlbBuildingPin> hlbBuildings;
   final List<MissionHlbLandmarkPin> hlbLandmarks;
+  final List<MissionMapLineFeature> hlbLineFeatures;
   final List<GpsPoint> walkPath;
   final String? boundarySource;
 
@@ -229,6 +246,17 @@ Future<MissionMapSession?> loadMissionMapSession(
       )
       .toList();
 
+  final hlbLineFeatures = state.roadSegments
+      .map(
+        (seg) => MissionMapLineFeature(
+          id: seg.localId,
+          segmentType: seg.segmentType,
+          name: seg.name,
+          points: seg.points.map((p) => GpsPoint(p.lat, p.lng)).toList(),
+        ),
+      )
+      .toList();
+
   final walkPath = state.breadcrumbs
       .map((b) => GpsPoint(b.latitude, b.longitude))
       .toList();
@@ -243,6 +271,7 @@ Future<MissionMapSession?> loadMissionMapSession(
     draftPins: draftPins,
     hlbBuildings: hlbBuildings,
     hlbLandmarks: hlbLandmarks,
+    hlbLineFeatures: hlbLineFeatures,
     walkPath: walkPath,
     boundarySource: official?.source ?? state.layoutGeoref?['source'] as String?,
   );

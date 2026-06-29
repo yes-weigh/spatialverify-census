@@ -15,6 +15,17 @@ typedef HlbLandmarkMarkResult = ({
   String landmarkType,
 });
 
+typedef HlbLineFeatureResult = ({
+  String segmentType,
+  String? name,
+});
+
+typedef HlbMapAnnotationResult = ({
+  String text,
+  String annotationType,
+  double rotationDegrees,
+});
+
 /// Manual HLB marking sheet — official census symbols from any map location.
 class MissionHlbMarkSheet {
   MissionHlbMarkSheet._();
@@ -60,6 +71,39 @@ class MissionHlbMarkSheet {
     String? locationHint,
   }) =>
       showLandmark(context, locationHint: locationHint);
+
+  /// Finish a traced polyline — road, canal, street, etc.
+  static Future<HlbLineFeatureResult?> showLineFeature(
+    BuildContext context, {
+    required int pointCount,
+  }) {
+    return showModalBottomSheet<HlbLineFeatureResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _LineFeatureSheet(pointCount: pointCount),
+    );
+  }
+
+  /// Angled map label — road name, area name, adjacent HLB reference.
+  static Future<HlbMapAnnotationResult?> showMapAnnotation(
+    BuildContext context, {
+    String? initialType,
+    String? initialText,
+  }) {
+    return showModalBottomSheet<HlbMapAnnotationResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _MapAnnotationSheet(initialType: initialType, initialText: initialText),
+    );
+  }
 }
 
 class _BuildingMarkSheet extends StatefulWidget {
@@ -180,7 +224,7 @@ class _LandmarkMarkSheet extends StatefulWidget {
 
 class _LandmarkMarkSheetState extends State<_LandmarkMarkSheet> {
   final _nameCtrl = TextEditingController();
-  late var _landmarkType = HlbOfficialCatalog.normalizeLandmarkType(widget.initialType ?? 'road');
+  late var _landmarkType = HlbOfficialCatalog.normalizeLandmarkType(widget.initialType ?? 'open_space');
 
   @override
   void dispose() {
@@ -246,7 +290,8 @@ class _LandmarkMarkSheetState extends State<_LandmarkMarkSheet> {
                         runSpacing: 6,
                         children: [
                           for (final entry in HlbOfficialCatalog.landmarksInCategory(category))
-                            _TypeChip(
+                            if (!HlbOfficialCatalog.isLineFeatureType(entry.id))
+                              _TypeChip(
                               entry.glyph != null ? '${entry.glyph} ${entry.label}' : entry.label,
                               entry.id,
                               _landmarkType,
@@ -277,6 +322,195 @@ class _LandmarkMarkSheetState extends State<_LandmarkMarkSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _LineFeatureSheet extends StatefulWidget {
+  const _LineFeatureSheet({required this.pointCount});
+
+  final int pointCount;
+
+  @override
+  State<_LineFeatureSheet> createState() => _LineFeatureSheetState();
+}
+
+class _LineFeatureSheetState extends State<_LineFeatureSheet> {
+  final _nameCtrl = TextEditingController();
+  var _segmentType = 'pucca_road';
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 12,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text('Save line feature', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+          Text(
+            '${widget.pointCount} points traced — choose feature type per layout map',
+            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _nameCtrl,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              labelText: 'Optional label (e.g. Canal Rd, Nala)',
+              labelStyle: const TextStyle(color: Colors.white54, fontSize: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final entry in HlbOfficialCatalog.lineFeatureEntries)
+                _TypeChip(
+                  entry.glyph != null ? '${entry.glyph} ${entry.label}' : entry.label,
+                  entry.id,
+                  _segmentType,
+                  (v) => setState(() => _segmentType = v),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              final name = _nameCtrl.text.trim();
+              Navigator.pop(
+                context,
+                (
+                  segmentType: _segmentType,
+                  name: name.isEmpty ? null : name,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              backgroundColor: const Color(0xFF42A5F5),
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('SAVE LINE ON MAP', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MapAnnotationSheet extends StatefulWidget {
+  const _MapAnnotationSheet({this.initialType, this.initialText});
+
+  final String? initialType;
+  final String? initialText;
+
+  @override
+  State<_MapAnnotationSheet> createState() => _MapAnnotationSheetState();
+}
+
+class _MapAnnotationSheetState extends State<_MapAnnotationSheet> {
+  late final _textCtrl = TextEditingController(text: widget.initialText ?? '');
+  late var _type = widget.initialType ?? 'road_name';
+  var _rotation = 0.0;
+
+  @override
+  void dispose() {
+    _textCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 12,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Map label', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+          const Text(
+            'Road names, village areas, or adjacent HLB numbers',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _textCtrl,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              labelText: 'Label text',
+              hintText: 'e.g. PALLIPATTU ROAD or HLB NO: 0053',
+              labelStyle: const TextStyle(color: Colors.white54),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _TypeChip('Road name', 'road_name', _type, (v) => setState(() => _type = v)),
+              _TypeChip('Area / village', 'area_name', _type, (v) => setState(() => _type = v)),
+              _TypeChip('Adjacent HLB', 'adjacent_hlb', _type, (v) => setState(() => _type = v)),
+            ],
+          ),
+          Row(
+            children: [
+              const Text('Angle', style: TextStyle(color: Colors.white70, fontSize: 12)),
+              Expanded(
+                child: Slider(
+                  value: _rotation,
+                  min: -90,
+                  max: 90,
+                  divisions: 36,
+                  label: '${_rotation.round()}°',
+                  onChanged: (v) => setState(() => _rotation = v),
+                ),
+              ),
+              Text('${_rotation.round()}°', style: const TextStyle(color: Colors.white70)),
+            ],
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final text = _textCtrl.text.trim();
+              if (text.isEmpty) return;
+              Navigator.pop(context, (text: text, annotationType: _type, rotationDegrees: _rotation));
+            },
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              backgroundColor: Colors.teal,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('PLACE LABEL ON MAP', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ],
       ),
     );
   }

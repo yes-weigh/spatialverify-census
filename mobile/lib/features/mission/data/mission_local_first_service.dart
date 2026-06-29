@@ -381,14 +381,87 @@ class MissionLocalFirstService {
     await _save(state);
   }
 
-  Future<void> confirmRoadSegment(String ebId, List<({double lat, double lng})> points) async {
+  Future<void> confirmRoadSegment(
+    String ebId,
+    List<({double lat, double lng})> points, {
+    String segmentType = 'pucca_road',
+    String? name,
+  }) async {
     if (points.length < 2) return;
     var state = await _load(ebId);
     state = state.copyWith(
       roadSegments: [
         ...state.roadSegments,
-        LocalRoadSegment(localId: _uuid.v4(), points: points),
+        LocalRoadSegment(
+          localId: _uuid.v4(),
+          points: points,
+          segmentType: HlbOfficialCatalog.normalizeLineType(segmentType),
+          name: name,
+        ),
       ],
+    );
+    await _save(state);
+  }
+
+  Future<void> addMapAnnotation(
+    String ebId, {
+    required String text,
+    required String annotationType,
+    required double latitude,
+    required double longitude,
+    double rotationDegrees = 0,
+  }) async {
+    var state = await _load(ebId);
+    final geoBounds = _geoBoundsFromState(state);
+    final coords = _project(latitude, longitude, geoBounds);
+    state = state.copyWith(
+      mapAnnotations: [
+        ...state.mapAnnotations,
+        LocalMapAnnotation(
+          localId: _uuid.v4(),
+          text: text,
+          annotationType: annotationType,
+          latitude: latitude,
+          longitude: longitude,
+          mapX: coords.x.clamp(0.02, 0.98),
+          mapY: coords.y.clamp(0.02, 0.98),
+          rotationDegrees: rotationDegrees,
+        ),
+      ],
+    );
+    await _save(state);
+  }
+
+  Future<void> saveLayoutMapFooter(
+    String ebId, {
+    String? enumeratorName,
+    String? enumeratorDate,
+    String? supervisorName,
+    String? supervisorDate,
+  }) async {
+    var state = await _load(ebId);
+    final footer = {
+      if (enumeratorName != null) 'enumeratorName': enumeratorName,
+      if (enumeratorDate != null) 'enumeratorDate': enumeratorDate,
+      if (supervisorName != null) 'supervisorName': supervisorName,
+      if (supervisorDate != null) 'supervisorDate': supervisorDate,
+    };
+    state = state.copyWith(
+      layoutGeoref: {
+        ...?state.layoutGeoref,
+        'layoutMapFooter': footer,
+      },
+    );
+    await _save(state);
+  }
+
+  Future<void> savePdfMetadata(String ebId, Map<String, dynamic> metadata) async {
+    var state = await _load(ebId);
+    state = state.copyWith(
+      layoutGeoref: {
+        ...?state.layoutGeoref,
+        'pdfMetadata': metadata,
+      },
     );
     await _save(state);
   }
