@@ -198,6 +198,58 @@ class SatelliteAlignMath {
     return resized.copyWith(rotation: bounds.rotation);
   }
 
+  static const double fineTuneMoveDamp = 1.0;
+  static const double fineTuneResizeDamp = 0.82;
+  static const double fineTuneRotateDamp = 0.55;
+
+  static double bearingDeltaDegrees(LatLng from, LatLng start, LatLng end) {
+    var delta = bearingDegrees(from, end) - bearingDegrees(from, start);
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    return delta;
+  }
+
+  /// Pan overlay by finger delta from drag start (stable — always uses [base]).
+  static ImageBounds fineTuneShift(ImageBounds base, LatLng startFinger, LatLng endFinger) {
+    final dLat = (endFinger.latitude - startFinger.latitude) * fineTuneMoveDamp;
+    final dLng = (endFinger.longitude - startFinger.longitude) * fineTuneMoveDamp;
+    return base.copyWith(
+      north: base.north + dLat,
+      south: base.south + dLat,
+      east: base.east + dLng,
+      west: base.west + dLng,
+    );
+  }
+
+  /// Rotate overlay by bearing change since drag start (stable — always uses [base]).
+  static ImageBounds fineTuneRotate(
+    ImageBounds base,
+    LatLng startFinger,
+    LatLng endFinger,
+  ) {
+    final center = base.center;
+    final delta = bearingDeltaDegrees(center, startFinger, endFinger) * fineTuneRotateDamp;
+    return base.copyWith(rotation: normalizeMapBearing(base.rotation + delta));
+  }
+
+  /// Resize from corner using finger delta since drag start (stable — always uses [base]).
+  static ImageBounds fineTuneResizeCorner(
+    ImageBounds base,
+    int cornerIndex,
+    LatLng startFinger,
+    LatLng endFinger,
+  ) {
+    final startCorner = imageUvToLatLngRotated(
+      _cornerUvs[cornerIndex].$1,
+      _cornerUvs[cornerIndex].$2,
+      base,
+    );
+    final dLat = (endFinger.latitude - startFinger.latitude) * fineTuneResizeDamp;
+    final dLng = (endFinger.longitude - startFinger.longitude) * fineTuneResizeDamp;
+    final newCorner = LatLng(startCorner.latitude + dLat, startCorner.longitude + dLng);
+    return resizeFromCornerDrag(base, cornerIndex, newCorner);
+  }
+
   /// Rotate overlay so the dragged edge midpoint follows [dragPosition].
   static ImageBounds rotateFromEdgeDrag(ImageBounds bounds, int edgeIndex, LatLng dragPosition) {
     final center = bounds.center;

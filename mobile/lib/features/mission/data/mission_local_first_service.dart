@@ -48,6 +48,37 @@ class MissionLocalFirstService {
     }
   }
 
+  /// Persist local HLB state and push to cloud when signed in.
+  Future<void> persistEbState(HlbLocalState state) async {
+    await _save(state);
+  }
+
+  /// Keep finalized on-device layout boundaries when cloud copy is stale.
+  static HlbLocalState mergePulledState(HlbLocalState local, HlbLocalState remote) {
+    final remoteNewer = remote.updatedAt.isAfter(local.updatedAt);
+    var merged = remoteNewer ? remote : local;
+    final other = remoteNewer ? local : remote;
+
+    final otherFinalized = other.layoutGeoref?['status'] == 'finalized';
+    if (merged.officialBoundary == null &&
+        other.officialBoundary != null &&
+        (otherFinalized || other.officialBoundary!.source == 'layout_map')) {
+      merged = merged.copyWith(
+        officialBoundary: other.officialBoundary,
+        missionIntelligence: other.missionIntelligence ?? merged.missionIntelligence,
+        layoutGeoref: other.layoutGeoref ?? merged.layoutGeoref,
+        blockStatus: other.blockStatus == 'published' ? other.blockStatus : merged.blockStatus,
+      );
+    } else if (otherFinalized && other.layoutGeoref != null) {
+      merged = merged.copyWith(
+        layoutGeoref: other.layoutGeoref,
+        missionIntelligence: other.missionIntelligence ?? merged.missionIntelligence,
+      );
+    }
+
+    return merged;
+  }
+
   /// Call when entering an HLB mission. Hydrates from server silently when online.
   Future<void> initEb({
     required String ebId,
@@ -72,21 +103,26 @@ class MissionLocalFirstService {
 
   /// Pull server state and flush pending writes — never blocks UI.
   Future<void> syncInBackground(String ebId) async {
-    if (AppConfig.useFirebase && _firebase != null && _firebase.isSignedIn) {
-      try {
-        final local = await _cache.get(ebId);
-        if (local == null) return;
-        final remote = await _firebase.pullEbState(local.projectId, ebId);
-        if (remote == null) {
-          await _firebase.pushEbState(local);
-          return;
-        }
-        if (local.serverSyncedAt == null || remote.updatedAt.isAfter(local.updatedAt)) {
-          await _cache.put(remote);
-        } else if (local.updatedAt.isAfter(remote.updatedAt)) {
-          await _firebase.pushEbState(local);
-        }
-      } catch (_) {}
+    if (AppConfig.useFirebase) {
+      if (_firebase != null && _firebase.isSignedIn) {
+        try {
+          final local = await _cache.get(ebId);
+          if (local == null) return;
+          final remote = await _firebase.pullEbState(local.projectId, ebId);
+          if (remote == null) {
+            await _firebase.pushEbState(local);
+            await _cache.put(local.copyWith(serverSyncedAt: DateTime.now()));
+            return;
+          }
+          if (remote.updatedAt.isAfter(local.updatedAt)) {
+            final merged = mergePulledState(local, remote);
+            await _cache.put(merged.copyWith(serverSyncedAt: DateTime.now()));
+          } else {
+            await _firebase.pushEbState(local);
+            await _cache.put(local.copyWith(serverSyncedAt: DateTime.now()));
+          }
+        } catch (_) {}
+      }
       return;
     }
     if (AppConfig.standaloneMode) return;

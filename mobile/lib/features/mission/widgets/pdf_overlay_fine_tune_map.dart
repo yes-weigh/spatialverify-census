@@ -8,15 +8,31 @@ import '../data/satellite_align_math.dart';
 import '../models/layout_georef_models.dart';
 import 'mission_satellite_map.dart';
 
+enum _FineTuneHandleKind { corner, edge, center }
+
+class _FineTuneDragSession {
+  const _FineTuneDragSession({
+    required this.baseBounds,
+    required this.startFinger,
+    required this.kind,
+    this.cornerIndex,
+    this.edgeIndex,
+  });
+
+  final ImageBounds baseBounds;
+  final LatLng startFinger;
+  final _FineTuneHandleKind kind;
+  final int? cornerIndex;
+  final int? edgeIndex;
+}
+
 /// Satellite map with PDF overlay resize (corners) and rotate (edges) handles.
 class PdfOverlayFineTuneMap extends StatefulWidget {
   const PdfOverlayFineTuneMap({
     required this.boundary,
-    required this.pdfBounds,
+    required this.initialBounds,
     required this.pdfImageUrl,
-    required this.onCornerDragged,
-    required this.onEdgeDragged,
-    required this.onCenterDragged,
+    required this.onBoundsChanged,
     this.pdfOpacity = 0.55,
     this.maskOutsideBoundary = false,
     this.boundaryUvRing = const [],
@@ -25,14 +41,12 @@ class PdfOverlayFineTuneMap extends StatefulWidget {
   });
 
   final List<GpsPoint> boundary;
-  final ImageBounds pdfBounds;
+  final ImageBounds initialBounds;
   final String pdfImageUrl;
   final double pdfOpacity;
   final bool maskOutsideBoundary;
   final List<({double x, double y})> boundaryUvRing;
-  final void Function(int cornerIndex, LatLng position) onCornerDragged;
-  final void Function(int edgeIndex, LatLng position) onEdgeDragged;
-  final void Function(LatLng position) onCenterDragged;
+  final ValueChanged<ImageBounds> onBoundsChanged;
   final void Function(Future<void> Function() fitCamera)? onMapReady;
 
   @override
@@ -43,16 +57,23 @@ class _PdfOverlayFineTuneMapState extends State<PdfOverlayFineTuneMap> {
   gmaps.GoogleMapController? _controller;
   gmaps.BytesMapBitmap? _pdfBitmap;
   var _bitmapKey = '';
+  late ImageBounds _liveBounds;
+  _FineTuneDragSession? _dragSession;
+  var _isDragging = false;
 
   @override
   void initState() {
     super.initState();
+    _liveBounds = widget.initialBounds;
     _loadPdfBitmap();
   }
 
   @override
   void didUpdateWidget(PdfOverlayFineTuneMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!_isDragging && oldWidget.initialBounds != widget.initialBounds) {
+      _liveBounds = widget.initialBounds;
+    }
     final key = _overlayBitmapKey();
     if (key != _bitmapKey ||
         oldWidget.pdfImageUrl != widget.pdfImageUrl ||
@@ -78,15 +99,60 @@ class _PdfOverlayFineTuneMapState extends State<PdfOverlayFineTuneMap> {
     });
   }
 
+  void _beginDrag({
+    required _FineTuneHandleKind kind,
+    required LatLng finger,
+    int? cornerIndex,
+    int? edgeIndex,
+  }) {
+    _dragSession = _FineTuneDragSession(
+      baseBounds: _liveBounds,
+      startFinger: finger,
+      kind: kind,
+      cornerIndex: cornerIndex,
+      edgeIndex: edgeIndex,
+    );
+    _isDragging = true;
+  }
+
+  void _endDrag(LatLng finger) {
+    final session = _dragSession;
+    if (session == null) return;
+
+    final ImageBounds next = switch (session.kind) {
+      _FineTuneHandleKind.center => SatelliteAlignMath.fineTuneShift(
+          session.baseBounds,
+          session.startFinger,
+          finger,
+        ),
+      _FineTuneHandleKind.corner => SatelliteAlignMath.fineTuneResizeCorner(
+          session.baseBounds,
+          session.cornerIndex!,
+          session.startFinger,
+          finger,
+        ),
+      _FineTuneHandleKind.edge => SatelliteAlignMath.fineTuneRotate(
+          session.baseBounds,
+          session.startFinger,
+          finger,
+        ),
+    };
+
+    _dragSession = null;
+    _isDragging = false;
+    setState(() => _liveBounds = next);
+    widget.onBoundsChanged(next);
+  }
+
   Set<gmaps.GroundOverlay> _buildGroundOverlays() {
     if (_pdfBitmap == null) return {};
     return {
       gmaps.GroundOverlay.fromBounds(
         groundOverlayId: const gmaps.GroundOverlayId('hlo_layout_overlay'),
         image: _pdfBitmap!,
-        bounds: imageBoundsToGoogle(widget.pdfBounds),
+        bounds: imageBoundsToGoogle(_liveBounds),
         transparency: (1 - widget.pdfOpacity.clamp(0.0, 1.0)).clamp(0.0, 1.0),
-        bearing: SatelliteAlignMath.normalizeMapBearing(widget.pdfBounds.rotation),
+        bearing: SatelliteAlignMath.normalizeMapBearing(_liveBounds.rotation),
         clickable: false,
         zIndex: 1,
       ),
@@ -99,7 +165,7 @@ class _PdfOverlayFineTuneMapState extends State<PdfOverlayFineTuneMap> {
 
     final points = <gmaps.LatLng>[
       ...boundaryToGoogle(widget.boundary),
-      ...SatelliteAlignMath.overlayCornerPositions(widget.pdfBounds)
+      ...SatelliteAlignMath.overlayCornerPositions(_liveBounds)
           .map((p) => gmaps.LatLng(p.latitude, p.longitude)),
     ];
     if (points.isEmpty) return;
@@ -126,41 +192,53 @@ class _PdfOverlayFineTuneMapState extends State<PdfOverlayFineTuneMap> {
     );
   }
 
+  gmaps.Marker _cornerMarker(int i, LatLng position) {
+    return gmaps.Marker(
+      markerId: gmaps.MarkerId('pdf_corner_$i'),
+      position: gmaps.LatLng(position.latitude, position.longitude),
+      draggable: true,
+      zIndexInt: 3,
+      icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(gmaps.BitmapDescriptor.hueOrange),
+      infoWindow: gmaps.InfoWindow(title: 'Resize corner ${i + 1}'),
+      onDragStart: (pos) => _beginDrag(
+        kind: _FineTuneHandleKind.corner,
+        finger: LatLng(pos.latitude, pos.longitude),
+        cornerIndex: i,
+      ),
+      onDragEnd: (pos) => _endDrag(LatLng(pos.latitude, pos.longitude)),
+    );
+  }
+
+  gmaps.Marker _edgeMarker(int i, LatLng position) {
+    return gmaps.Marker(
+      markerId: gmaps.MarkerId('pdf_edge_$i'),
+      position: gmaps.LatLng(position.latitude, position.longitude),
+      draggable: true,
+      zIndexInt: 2,
+      icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(gmaps.BitmapDescriptor.hueViolet),
+      infoWindow: gmaps.InfoWindow(title: 'Rotate edge ${i + 1}'),
+      onDragStart: (pos) => _beginDrag(
+        kind: _FineTuneHandleKind.edge,
+        finger: LatLng(pos.latitude, pos.longitude),
+        edgeIndex: i,
+      ),
+      onDragEnd: (pos) => _endDrag(LatLng(pos.latitude, pos.longitude)),
+    );
+  }
+
   Set<gmaps.Marker> _buildMarkers() {
     final markers = <gmaps.Marker>{};
-    final corners = SatelliteAlignMath.overlayCornerPositions(widget.pdfBounds);
+    final corners = SatelliteAlignMath.overlayCornerPositions(_liveBounds);
     for (var i = 0; i < corners.length; i++) {
-      markers.add(
-        gmaps.Marker(
-          markerId: gmaps.MarkerId('pdf_corner_$i'),
-          position: gmaps.LatLng(corners[i].latitude, corners[i].longitude),
-          draggable: true,
-          zIndexInt: 3,
-          icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(gmaps.BitmapDescriptor.hueOrange),
-          infoWindow: gmaps.InfoWindow(title: 'Resize corner ${i + 1}'),
-          onDrag: (pos) => widget.onCornerDragged(i, LatLng(pos.latitude, pos.longitude)),
-          onDragEnd: (pos) => widget.onCornerDragged(i, LatLng(pos.latitude, pos.longitude)),
-        ),
-      );
+      markers.add(_cornerMarker(i, corners[i]));
     }
 
-    final edges = SatelliteAlignMath.overlayEdgePositions(widget.pdfBounds);
+    final edges = SatelliteAlignMath.overlayEdgePositions(_liveBounds);
     for (var i = 0; i < edges.length; i++) {
-      markers.add(
-        gmaps.Marker(
-          markerId: gmaps.MarkerId('pdf_edge_$i'),
-          position: gmaps.LatLng(edges[i].latitude, edges[i].longitude),
-          draggable: true,
-          zIndexInt: 2,
-          icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(gmaps.BitmapDescriptor.hueViolet),
-          infoWindow: gmaps.InfoWindow(title: 'Rotate edge ${i + 1}'),
-          onDrag: (pos) => widget.onEdgeDragged(i, LatLng(pos.latitude, pos.longitude)),
-          onDragEnd: (pos) => widget.onEdgeDragged(i, LatLng(pos.latitude, pos.longitude)),
-        ),
-      );
+      markers.add(_edgeMarker(i, edges[i]));
     }
 
-    final center = widget.pdfBounds.center;
+    final center = _liveBounds.center;
     markers.add(
       gmaps.Marker(
         markerId: const gmaps.MarkerId('pdf_center'),
@@ -169,8 +247,11 @@ class _PdfOverlayFineTuneMapState extends State<PdfOverlayFineTuneMap> {
         zIndexInt: 4,
         icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(gmaps.BitmapDescriptor.hueCyan),
         infoWindow: const gmaps.InfoWindow(title: 'Move overlay'),
-        onDrag: (pos) => widget.onCenterDragged(LatLng(pos.latitude, pos.longitude)),
-        onDragEnd: (pos) => widget.onCenterDragged(LatLng(pos.latitude, pos.longitude)),
+        onDragStart: (pos) => _beginDrag(
+          kind: _FineTuneHandleKind.center,
+          finger: LatLng(pos.latitude, pos.longitude),
+        ),
+        onDragEnd: (pos) => _endDrag(LatLng(pos.latitude, pos.longitude)),
       ),
     );
 

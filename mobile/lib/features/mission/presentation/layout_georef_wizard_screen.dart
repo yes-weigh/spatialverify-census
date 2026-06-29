@@ -1097,28 +1097,8 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
     });
   }
 
-  void _onFineTuneCornerDragged(int cornerIndex, LatLng position) {
-    final bounds = _fineTuneBounds;
-    if (bounds == null) return;
-    setState(() {
-      _fineTuneBounds = SatelliteAlignMath.resizeFromCornerDrag(bounds, cornerIndex, position);
-    });
-  }
-
-  void _onFineTuneEdgeDragged(int edgeIndex, LatLng position) {
-    final bounds = _fineTuneBounds;
-    if (bounds == null) return;
-    setState(() {
-      _fineTuneBounds = SatelliteAlignMath.rotateFromEdgeDrag(bounds, edgeIndex, position);
-    });
-  }
-
-  void _onFineTuneCenterDragged(LatLng position) {
-    final bounds = _fineTuneBounds;
-    if (bounds == null) return;
-    setState(() {
-      _fineTuneBounds = SatelliteAlignMath.shiftBoundsToCenter(bounds, position);
-    });
+  void _onFineTuneBoundsChanged(ImageBounds bounds) {
+    _fineTuneBounds = bounds;
   }
 
   Widget _fineTuneBody() {
@@ -1147,14 +1127,12 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       children: [
         PdfOverlayFineTuneMap(
           boundary: boundary,
-          pdfBounds: bounds,
+          initialBounds: bounds,
           pdfImageUrl: path,
           pdfOpacity: _opacity,
           maskOutsideBoundary: _pdfMaskOutsideBoundary,
           boundaryUvRing: _uvRingFromIntelligence(),
-          onCornerDragged: _onFineTuneCornerDragged,
-          onEdgeDragged: _onFineTuneEdgeDragged,
-          onCenterDragged: _onFineTuneCenterDragged,
+          onBoundsChanged: _onFineTuneBoundsChanged,
         ),
         SafeArea(
           child: Padding(
@@ -1163,7 +1141,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
               alignment: Alignment.topLeft,
               child: MissionMapHudStatus(
                 title: 'Fine tune PDF overlay',
-                subtitle: 'Cyan center moves · orange corners resize · purple edges rotate',
+                subtitle: 'Drag a handle, release to apply · cyan moves · orange resizes · purple rotates',
                 icon: Icons.tune,
               ),
             ),
@@ -1184,20 +1162,38 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                CheckboxListTile(
-                  value: _pdfMaskOutsideBoundary,
-                  onChanged: (v) => setState(() => _pdfMaskOutsideBoundary = v ?? false),
-                  activeColor: const Color(0xFF42A5F5),
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: const Text(
-                    'Hide PDF outside HLB boundary',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: const Text(
-                    'Makes area outside the boundary transparent so satellite shows through.',
-                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Checkbox(
+                      value: _pdfMaskOutsideBoundary,
+                      onChanged: (v) => setState(() => _pdfMaskOutsideBoundary = v ?? false),
+                      activeColor: const Color(0xFF42A5F5),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _pdfMaskOutsideBoundary = !_pdfMaskOutsideBoundary),
+                        child: const Padding(
+                          padding: EdgeInsets.only(top: 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Hide PDF outside HLB boundary',
+                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Makes area outside the boundary transparent so satellite shows through.',
+                                style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -2077,14 +2073,15 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
           intelligence: raw,
           gpsBoundary: _intelligence!.gpsBoundary,
         );
+        final finalized = await _local.getRawState(widget.ebId);
+        if (finalized != null) {
+          await _local.persistEbState(finalized);
+        }
         await ref.read(localRegistryProvider).updateEbStatus(
               widget.projectId,
               widget.ebId,
               status: 'published',
             );
-        if (AppConfig.useFirebase) {
-          await _local.syncInBackground(widget.ebId);
-        }
       } else {
         await _api.confirmIntelligence(widget.ebId);
         await _api.finalize(widget.ebId);

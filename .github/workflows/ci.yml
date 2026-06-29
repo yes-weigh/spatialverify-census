@@ -9,6 +9,12 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://spatialverify:test@localhost:5432/spatialverify_test
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: test-jwt-secret-key-for-ci-pipeline-only
+      JWT_REFRESH_SECRET: test-refresh-secret-key-for-ci-only
+      NODE_ENV: test
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -56,16 +62,9 @@ jobs:
         run: npm run typecheck
 
       - name: Run migrations
-        env:
-          DATABASE_URL: postgresql://spatialverify:test@localhost:5432/spatialverify_test
         run: npm run migrate
 
       - name: Test
-        env:
-          DATABASE_URL: postgresql://spatialverify:test@localhost:5432/spatialverify_test
-          REDIS_URL: redis://localhost:6379
-          JWT_SECRET: test-jwt-secret-key-for-ci-pipeline-only
-          JWT_REFRESH_SECRET: test-refresh-secret-key-for-ci-only
         run: npm test
 
   mobile:
