@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:ota_update/ota_update.dart';
 
 import '../theme/app_theme.dart';
 import 'app_release_info.dart';
+import 'app_update_install_event.dart';
 import 'app_update_service.dart';
 
 class AppUpdateDialog extends StatefulWidget {
@@ -42,40 +42,25 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
       _installing = true;
       _error = null;
       _status = 'Downloading update…';
+      _progress = null;
     });
 
     try {
       await for (final event in widget.updateService.installRelease(widget.release)) {
         if (!mounted) return;
         setState(() {
-          switch (event.status) {
-            case OtaStatus.DOWNLOADING:
-              _status = 'Downloading… ${event.value ?? ''}';
-              final raw = event.value;
-              if (raw != null) {
-                final parsed = double.tryParse(raw.replaceAll('%', ''));
-                if (parsed != null) _progress = parsed / 100;
-              }
-            case OtaStatus.INSTALLING:
+          switch (event.phase) {
+            case AppUpdatePhase.downloading:
+              _status = 'Downloading… ${((event.progress ?? 0) * 100).round()}%';
+              _progress = event.progress;
+            case AppUpdatePhase.installing:
               _status = 'Opening installer…';
               _progress = null;
-            case OtaStatus.ALREADY_RUNNING_ERROR:
-              _error = 'An update is already in progress.';
+            case AppUpdatePhase.done:
+              _status = 'Installer opened — confirm on screen to finish.';
               _installing = false;
-            case OtaStatus.PERMISSION_NOT_GRANTED_ERROR:
-              _error = 'Allow install from this source in Android settings, then retry.';
-              _installing = false;
-            case OtaStatus.INTERNAL_ERROR:
-              _error = event.value ?? 'Update failed.';
-              _installing = false;
-            case OtaStatus.DOWNLOAD_ERROR:
-              _error = event.value ?? 'Download failed.';
-              _installing = false;
-            case OtaStatus.CANCELED:
-              _error = 'Download canceled.';
-              _installing = false;
-            case OtaStatus.CHECKSUM_ERROR:
-              _error = 'Downloaded file failed verification.';
+            case AppUpdatePhase.error:
+              _error = event.message ?? 'Update failed.';
               _installing = false;
           }
         });

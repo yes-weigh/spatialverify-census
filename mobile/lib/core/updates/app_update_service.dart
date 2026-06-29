@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
-import 'package:ota_update/ota_update.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'app_release_info.dart';
+import 'app_update_install_event.dart';
 
 /// Checks Firestore for a newer Android build and installs from Firebase Storage.
 class AppUpdateService {
@@ -66,19 +68,56 @@ class AppUpdateService {
     }
   }
 
-  /// Downloads the APK via [OtaUpdate] and triggers the Android package installer.
-  Stream<OtaEvent> installRelease(AppReleaseInfo release) async* {
+  /// Downloads the APK from Storage and opens the Android package installer.
+  Stream<AppUpdateInstallEvent> installRelease(AppReleaseInfo release) async* {
     if (kIsWeb || !Platform.isAndroid) {
       throw UnsupportedError('In-app updates are Android-only');
     }
 
-    final ref = _storage.ref(release.apkStoragePath);
-    final downloadUrl = await ref.getDownloadURL();
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/spatialverify-${release.buildNumber}.apk');
+    if (file.existsSync()) {
+      await file.delete();
+    }
 
-    yield* OtaUpdate().execute(
-      downloadUrl,
-      destinationFilename: 'spatialverify-${release.buildNumber}.apk',
-      androidProviderAuthority: 'com.spatialverify.spatialverify.fileprovider',
+    final ref = _storage.ref(release.apkStoragePath);
+    final task = ref.writeToFile(file);
+
+    await for (final snapshot in task.snapshotEvents) {
+      final total = snapshot.totalBytes;
+      if (total > 0) {
+        yield AppUpdateInstallEvent(
+          phase: AppUpdatePhase.downloading,
+          progress: snapshot.bytesTransferred / total,
+        );
+      }
+    }
+
+    await task;
+
+    if (!file.existsSync() || await file.length() < 1024) {
+      yield const AppUpdateInstallEvent(
+        phase: AppUpdatePhase.error,
+        message: 'Downloaded APK is missing or too small.',
+      );
+      return;
+    }
+
+    yield const AppUpdateInstallEvent(phase: AppUpdatePhase.installing);
+
+    final result = await OpenFilex.open(
+      file.path,
+      type: 'application/vnd.android.package-archive',
+    );
+
+    if (result.type == ResultType.done) {
+      yield const AppUpdateInstallEvent(phase: AppUpdatePhase.done);
+      return;
+    }
+
+    yield AppUpdateInstallEvent(
+      phase: AppUpdatePhase.error,
+      message: result.message ?? 'Could not open the Android installer.',
     );
   }
 }
