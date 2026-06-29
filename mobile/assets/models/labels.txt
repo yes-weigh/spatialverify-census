@@ -1,0 +1,14 @@
+# YOLOv8 class labels for COCO dataset
+# Replace with custom labels for infrastructure detection
+pole
+utility_pole
+hydrant
+fire_hydrant
+manhole
+manhole_cover
+sign
+street_sign
+transformer
+meter
+valve
+pipe

@@ -1,0 +1,59 @@
+# Local SDK / temp (do not commit)
+tools/
+tmp/
+
+# Dependencies
+node_modules/
+.pub-cache/
+.pub/
+build/
+.dart_tool/
+
+# Environment
+.env
+*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+*.apk
+*.ipa
+*.aab
+
+# Database
+*.db
+*.sqlite
+
+# Logs
+*.log
+npm-debug.log*
+
+# Generated
+*.g.dart
+*.freezed.dart
+mobile/lib/core/database/database.g.dart
+
+# Secrets
+*.pem
+*.key
+credentials.json
+
+# MinIO/S3 local
+minio_data/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Flutter
+.flutter-plugins
+.flutter-plugins-dependencies

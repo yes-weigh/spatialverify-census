@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSCameraUsageDescription</key>
+    <string>SpatialVerify needs camera access for object detection and AR scanning.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>SpatialVerify needs location access to capture GPS coordinates for survey assets.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>SpatialVerify needs location access to track survey coverage and geofencing.</string>
+    <key>NSMotionUsageDescription</key>
+    <string>SpatialVerify needs motion sensors for AR spatial anchoring.</string>
+    <key>io.flutter.embedded_views_preview</key>
+    <true/>
+    <key>GMSApiKey</key>
+    <string></string>
+</dict>
+</plist>

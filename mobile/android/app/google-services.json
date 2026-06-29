@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "600389207474",
+    "project_id": "spatialverify-census",
+    "storage_bucket": "spatialverify-census.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:600389207474:android:476ba1bab219fc322dd0ab",
+        "android_client_info": {
+          "package_name": "com.spatialverify.spatialverify"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3c1MPs9xW3O5XvqyGq7pQ4Y6NQ2-pINk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
