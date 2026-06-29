@@ -1,18 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/config/app_config.dart';
 import '../../core/models/models.dart';
 import '../../core/database/database.dart';
-import '../../core/network/api_client.dart';
 import '../../core/storage/secure_storage.dart';
-import '../../core/sync/sync_engine.dart';
-import '../../features/auth/data/auth_repository.dart';
 import '../../features/auth/data/auth_service.dart';
 import '../../features/auth/data/firebase_auth_repository.dart';
 import '../../features/mission/data/firebase_mission_repository.dart';
-import '../../features/mission/data/local_registry_service.dart';
-import '../../features/scanner/data/detection_service.dart';
-import '../../features/ar/data/ar_anchor_service.dart';
-import '../../features/identity/data/spatial_identity_service.dart';
 
 final secureStorageProvider = Provider<SecureLocalStorage>((ref) {
   throw UnimplementedError('Must be overridden in main');
@@ -21,20 +13,6 @@ final secureStorageProvider = Provider<SecureLocalStorage>((ref) {
 final databaseProvider = Provider<AppDatabase>((ref) {
   throw UnimplementedError('Must be overridden in main');
 });
-
-final apiClientProvider = Provider<ApiClient>((ref) {
-  return ApiClient();
-});
-
-final syncEngineProvider = Provider<SyncEngine>((ref) {
-  return SyncEngine(
-    apiClient: ref.watch(apiClientProvider),
-    database: ref.watch(databaseProvider),
-    storage: ref.watch(secureStorageProvider),
-  );
-});
-
-final localRegistryProvider = Provider<LocalRegistryService>((ref) => LocalRegistryService());
 
 final firebaseMissionRepositoryProvider = Provider<FirebaseMissionRepository>((ref) {
   return FirebaseMissionRepository();
@@ -47,57 +25,11 @@ final firebaseAuthRepositoryProvider = Provider<FirebaseAuthRepository>((ref) {
   );
 });
 
-final restAuthRepositoryProvider = Provider<AuthRepository>((ref) {
-  return AuthRepository(
-    apiClient: ref.watch(apiClientProvider),
-    database: ref.watch(databaseProvider),
-    storage: ref.watch(secureStorageProvider),
-  );
-});
-
 final authServiceProvider = Provider<AuthService>((ref) {
-  if (AppConfig.useFirebase) {
-    return ref.watch(firebaseAuthRepositoryProvider);
-  }
-  return ref.watch(restAuthRepositoryProvider);
+  return ref.watch(firebaseAuthRepositoryProvider);
 });
 
 final authRepositoryProvider = Provider<AuthService>((ref) => ref.watch(authServiceProvider));
-
-final projectRepositoryProvider = Provider<ProjectRepository>((ref) {
-  return ProjectRepository(
-    apiClient: ref.watch(apiClientProvider),
-    database: ref.watch(databaseProvider),
-  );
-});
-
-final detectionServiceProvider = Provider<DetectionService>((ref) {
-  final service = DetectionService(
-    apiClient: ref.watch(apiClientProvider),
-    database: ref.watch(databaseProvider),
-    syncEngine: ref.watch(syncEngineProvider),
-  );
-  ref.onDispose(() => service.dispose());
-  return service;
-});
-
-final arAnchorServiceProvider = Provider<ArAnchorService>((ref) {
-  return ArAnchorService(
-    apiClient: ref.watch(apiClientProvider),
-    database: ref.watch(databaseProvider),
-    syncEngine: ref.watch(syncEngineProvider),
-  );
-});
-
-final spatialIdentityServiceProvider = Provider<SpatialIdentityService>((ref) {
-  final service = SpatialIdentityService(
-    apiClient: ref.watch(apiClientProvider),
-    database: ref.watch(databaseProvider),
-    syncEngine: ref.watch(syncEngineProvider),
-  );
-  ref.onDispose(() => service.dispose());
-  return service;
-});
 
 final authStateProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   return AuthNotifier(ref.watch(authServiceProvider), ref);
@@ -135,22 +67,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> _checkAuth() async {
     state = state.copyWith(isLoading: true);
-    if (AppConfig.standaloneMode) {
-      state = AuthState(
-        user: User(
-          id: 'local-enumerator',
-          email: 'field@local',
-          firstName: 'Field',
-          lastName: 'Enumerator',
-          role: UserRole.fieldWorker,
-        ),
-        isLoading: false,
-      );
-      return;
-    }
     try {
       final user = await _repository.getCurrentUser();
-      if (user != null && AppConfig.useFirebase) {
+      if (user != null) {
         await _ref.read(firebaseMissionRepositoryProvider).ensureWorkspace();
       }
       state = AuthState(user: user, isLoading: false);
@@ -163,9 +82,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final (user, _) = await _repository.login(email, password);
-      if (AppConfig.useFirebase) {
-        await _ref.read(firebaseMissionRepositoryProvider).ensureWorkspace();
-      }
+      await _ref.read(firebaseMissionRepositoryProvider).ensureWorkspace();
       state = AuthState(user: user, isLoading: false);
       return true;
     } catch (e) {
@@ -178,9 +95,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final (user, _) = await _repository.register(email: email, password: password);
-      if (AppConfig.useFirebase) {
-        await _ref.read(firebaseMissionRepositoryProvider).ensureWorkspace();
-      }
+      await _ref.read(firebaseMissionRepositoryProvider).ensureWorkspace();
       state = AuthState(user: user, isLoading: false);
       return true;
     } catch (e) {
@@ -196,18 +111,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
 }
 
 final projectsProvider = FutureProvider<List<Project>>((ref) async {
-  if (AppConfig.standaloneMode) {
-    final registry = ref.watch(localRegistryProvider);
-    await registry.init();
-    return registry.listProjects();
-  }
-  if (AppConfig.useFirebase) {
-    final cloud = ref.watch(firebaseMissionRepositoryProvider);
-    await cloud.ensureWorkspace();
-    return cloud.listProjects();
-  }
-  final repo = ref.watch(projectRepositoryProvider);
-  return repo.getProjects();
+  final cloud = ref.watch(firebaseMissionRepositoryProvider);
+  await cloud.ensureWorkspace();
+  return cloud.listProjects();
 });
 
 final selectedProjectProvider = StateProvider<Project?>((ref) => null);
@@ -242,37 +148,5 @@ AssetStatus _parseAssetStatus(String status) {
       return AssetStatus.rejected;
     default:
       return AssetStatus.notSurveyed;
-  }
-}
-
-final syncStateProvider = StateNotifierProvider<SyncNotifier, SyncState>((ref) {
-  return SyncNotifier(ref.watch(syncEngineProvider));
-});
-
-class SyncState {
-  const SyncState({
-    this.isSyncing = false,
-    this.lastResult,
-    this.lastSyncAt,
-  });
-
-  final bool isSyncing;
-  final SyncResult? lastResult;
-  final DateTime? lastSyncAt;
-}
-
-class SyncNotifier extends StateNotifier<SyncState> {
-  SyncNotifier(this._engine) : super(const SyncState());
-
-  final SyncEngine _engine;
-
-  Future<void> sync(String projectId) async {
-    state = SyncState(isSyncing: true, lastSyncAt: state.lastSyncAt);
-    final result = await _engine.sync(projectId);
-    state = SyncState(
-      isSyncing: false,
-      lastResult: result,
-      lastSyncAt: DateTime.now(),
-    );
   }
 }

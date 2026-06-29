@@ -174,7 +174,7 @@ class _StartPointScreenState extends ConsumerState<StartPointScreen> with Missio
     await _local.recordBoundaryAudit(widget.ebId, 'start_reached');
     await _local.recordBoundaryAudit(widget.ebId, 'discovery_started');
     if (context.mounted) {
-      context.pushReplacement('/mission/${widget.projectId}/eb/${widget.ebId}/discover-walk');
+      context.pushReplacement('/mission/${widget.projectId}/eb/${widget.ebId}');
     }
   }
 }
@@ -209,7 +209,7 @@ class _ArrivedCard extends StatelessWidget {
                   backgroundColor: const Color(0xFF00E676),
                   foregroundColor: Colors.black,
                 ),
-                child: const Text('START DISCOVERY WALK', style: TextStyle(fontWeight: FontWeight.w900)),
+                child: const Text('OPEN MAP', style: TextStyle(fontWeight: FontWeight.w900)),
               ),
             ),
           ],

@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/network/api_client.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/models/models.dart';
 
 final analyticsProvider = FutureProvider.family<AnalyticsDashboard, String>((ref, projectId) async {
-  final api = ref.watch(apiClientProvider);
-  final response = await api.get('/survey/analytics/$projectId');
-  return AnalyticsDashboard.fromJson(response.data as Map<String, dynamic>);
+  final ebs = await ref.watch(firebaseMissionRepositoryProvider).listEbs(projectId);
+  final totalBuildings = ebs.fold<int>(0, (sum, eb) => sum + eb.totalBuildings);
+  final completed = ebs.fold<int>(0, (sum, eb) => sum + ((eb.progressPercent / 100) * eb.totalBuildings).round());
+  final coverage = totalBuildings == 0 ? 0.0 : (completed / totalBuildings) * 100;
+  return AnalyticsDashboard(
+    coverage: coverage,
+    totalAssets: totalBuildings,
+    verifiedAssets: completed,
+    pendingAssets: totalBuildings - completed,
+    conflicts: 0,
+    productivity: completed,
+  );
 });
 
 class AnalyticsScreen extends ConsumerWidget {
@@ -58,44 +66,19 @@ class _CoverageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: AppTheme.glassDecoration(),
-      child: Column(
-        children: [
-          SizedBox(
-            width: 120,
-            height: 120,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 120,
-                  height: 120,
-                  child: CircularProgressIndicator(
-                    value: coverage / 100,
-                    strokeWidth: 8,
-                    backgroundColor: AppTheme.surfaceLight,
-                    color: AppTheme.primary,
-                  ),
-                ),
-                Text(
-                  '${coverage.toStringAsFixed(0)}%',
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Survey Coverage',
-            style: TextStyle(fontSize: 16, color: AppTheme.textSecondary),
-          ),
-        ],
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Listing coverage', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(value: coverage / 100, minHeight: 8),
+            const SizedBox(height: 8),
+            Text('${coverage.toStringAsFixed(1)}% complete', style: const TextStyle(color: AppTheme.textSecondary)),
+          ],
+        ),
       ),
     );
   }
@@ -108,44 +91,35 @@ class _StatsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      childAspectRatio: 1.5,
+    return Row(
       children: [
-        _StatCard('Verified', dashboard.verified, AppTheme.verified),
-        _StatCard('Pending', dashboard.pending, AppTheme.pending),
-        _StatCard('Rejected', dashboard.rejected, AppTheme.rejected),
-        _StatCard('Not Surveyed', dashboard.notSurveyed, AppTheme.notSurveyed),
+        Expanded(child: _StatTile(label: 'Buildings', value: '${dashboard.totalAssets}')),
+        const SizedBox(width: 12),
+        Expanded(child: _StatTile(label: 'Completed', value: '${dashboard.verifiedAssets}')),
+        const SizedBox(width: 12),
+        Expanded(child: _StatTile(label: 'Pending', value: '${dashboard.pendingAssets}')),
       ],
     );
   }
 }
 
-class _StatCard extends StatelessWidget {
-  const _StatCard(this.label, this.value, this.color);
+class _StatTile extends StatelessWidget {
+  const _StatTile({required this.label, required this.value});
 
   final String label;
-  final int value;
-  final Color color;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: AppTheme.glassDecoration(),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            '$value',
-            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: color),
-          ),
-          Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-        ],
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          ],
+        ),
       ),
     );
   }
@@ -158,37 +132,30 @@ class _ConflictCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: AppTheme.glassDecoration(),
-      child: Row(
-        children: [
-          Icon(
-            Icons.warning_amber_rounded,
-            color: count > 0 ? AppTheme.pending : AppTheme.verified,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$count Open Conflicts',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                const Text(
-                  'Requires supervisor review',
-                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-        ],
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.warning_amber_outlined),
+        title: const Text('Open conflicts'),
+        subtitle: Text(count == 0 ? 'None on device' : '$count need review'),
       ),
     );
   }
+}
+
+class AnalyticsDashboard {
+  const AnalyticsDashboard({
+    required this.coverage,
+    required this.totalAssets,
+    required this.verifiedAssets,
+    required this.pendingAssets,
+    required this.conflicts,
+    required this.productivity,
+  });
+
+  final double coverage;
+  final int totalAssets;
+  final int verifiedAssets;
+  final int pendingAssets;
+  final int conflicts;
+  final int productivity;
 }

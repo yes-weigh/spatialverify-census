@@ -6,7 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../models/mission_models.dart';
 import '../utils/mission_navigation.dart';
 import '../widgets/bearing_arrow.dart';
-import 'eb_list_screen.dart';
+import '../presentation/mission_providers.dart';
 import 'mission_home_screen.dart';
 
 class BuildingWorkflowScreen extends ConsumerStatefulWidget {
@@ -61,7 +61,8 @@ class _BuildingWorkflowScreenState extends ConsumerState<BuildingWorkflowScreen>
   Future<void> _learnPinOnArrival(MissionBuilding building, Position pos) async {
     if (_pinLearned) return;
     _pinLearned = true;
-    await ref.read(missionApiProvider).updateBuildingStatus(
+    await ref.read(missionLocalFirstProvider).updateBuildingStatus(
+          widget.ebId,
           building.id,
           MissionBuildingStatus.visited,
           latitude: pos.latitude,
@@ -146,12 +147,6 @@ class _BuildingWorkflowScreenState extends ConsumerState<BuildingWorkflowScreen>
                     child: const Text('Complete anyway'),
                   ),
                 ],
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: () => context.push('/scan/${widget.projectId}?ebId=${widget.ebId}&buildingId=${widget.buildingId}'),
-                  icon: const Icon(Icons.camera_alt_outlined, size: 18),
-                  label: const Text('Verify with camera (optional)'),
-                ),
               ],
             ),
           );
@@ -171,7 +166,8 @@ class _BuildingWorkflowScreenState extends ConsumerState<BuildingWorkflowScreen>
         lng = pos.longitude;
       } catch (_) {}
 
-      await ref.read(missionApiProvider).updateBuildingStatus(
+      await ref.read(missionLocalFirstProvider).updateBuildingStatus(
+            widget.ebId,
             widget.buildingId,
             MissionBuildingStatus.completed,
             latitude: lat,

@@ -66,8 +66,6 @@ if ($googleMapsKey) {
 }
 
 $dartDefines = @(
-  "--dart-define=STANDALONE_MODE=false"
-  "--dart-define=USE_FIREBASE=true"
   "--dart-define=GOOGLE_MAPS_API_KEY=$googleMapsKey"
 )
 

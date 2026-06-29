@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../models/mission_models.dart';
-import 'eb_list_screen.dart';
+import '../presentation/mission_providers.dart';
 import 'mission_home_screen.dart';
 
 class EndOfDayReviewScreen extends ConsumerWidget {
@@ -148,7 +148,7 @@ class _ReviewRow extends StatelessWidget {
 typedef DayReviewKey = ({String ebId, double? lat, double? lng});
 
 final dayReviewProvider = FutureProvider.family<DayReview, DayReviewKey>((ref, key) async {
-  return ref.watch(missionApiProvider).getDayReview(
+  return ref.watch(missionLocalFirstProvider).getDayReview(
         key.ebId,
         latitude: key.lat,
         longitude: key.lng,

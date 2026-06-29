@@ -2,16 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
-import '../../../core/config/app_config.dart';
 import '../../../core/providers/providers.dart';
 import '../data/hlb_local_cache.dart';
 import '../data/local_mission_import_service.dart';
-import '../data/local_registry_service.dart';
 import '../data/mission_completion.dart';
 import '../data/mission_intelligence_engine.dart';
 import '../data/mission_local_first_service.dart';
-import '../data/mission_offline_store.dart';
-import '../data/mission_service.dart';
 import '../data/discovery_analytics.dart';
 import '../data/hlb_local_state.dart';
 import '../data/firebase_mission_repository.dart';
@@ -20,7 +16,6 @@ import '../utils/mission_navigation.dart';
 import '../widgets/bearing_arrow.dart';
 import 'eb_list_screen.dart';
 
-/// Identifies an HLB mission for local-first providers.
 class EbMissionQuery {
   const EbMissionQuery({required this.ebId, required this.projectId});
 
@@ -35,7 +30,6 @@ class EbMissionQuery {
   int get hashCode => Object.hash(ebId, projectId);
 }
 
-/// Fetched once at app launch — permission + immediate GPS fix for map focus.
 final appLaunchLocationProvider = FutureProvider<Position?>((ref) async {
   final allowed = await ensureMissionLocationPermission();
   if (!allowed) return null;
@@ -52,10 +46,8 @@ final hlbLocalCacheProvider = Provider<HlbLocalCache>((ref) => HlbLocalCache());
 
 final missionLocalFirstProvider = Provider<MissionLocalFirstService>((ref) {
   return MissionLocalFirstService(
-    api: ref.watch(missionApiProvider),
     cache: ref.watch(hlbLocalCacheProvider),
-    syncQueue: ref.watch(missionOfflineStoreProvider),
-    firebase: AppConfig.useFirebase ? ref.watch(firebaseMissionRepositoryProvider) : null,
+    firebase: ref.watch(firebaseMissionRepositoryProvider),
   );
 });
 
@@ -67,33 +59,19 @@ Future<void> _ensureEbInitialized(Ref ref, EbMissionQuery query) async {
   final local = ref.read(missionLocalFirstProvider);
   final cached = await ref.read(hlbLocalCacheProvider).get(query.ebId);
   if (cached != null) {
-    if (!AppConfig.standaloneMode) local.syncInBackground(query.ebId);
+    local.syncInBackground(query.ebId);
     return;
   }
   EnumerationBlock? eb;
-  if (AppConfig.standaloneMode) {
-    final registry = ref.read(localRegistryProvider);
-    await registry.init();
-    try {
-      final ebs = registry.listEbs(query.projectId);
-      eb = ebs.firstWhere((e) => e.id == query.ebId);
-    } catch (_) {}
-  } else if (AppConfig.useFirebase) {
-    try {
-      final ebs = await ref.read(firebaseMissionRepositoryProvider).listEbs(query.projectId);
-      for (final candidate in ebs) {
-        if (candidate.id == query.ebId) {
-          eb = candidate;
-          break;
-        }
+  try {
+    final ebs = await ref.read(firebaseMissionRepositoryProvider).listEbs(query.projectId);
+    for (final candidate in ebs) {
+      if (candidate.id == query.ebId) {
+        eb = candidate;
+        break;
       }
-    } catch (_) {}
-  } else {
-    try {
-      final ebs = await ref.read(ebListProvider(query.projectId).future);
-      eb = ebs.firstWhere((e) => e.id == query.ebId);
-    } catch (_) {}
-  }
+    }
+  } catch (_) {}
   await local.initEb(
     ebId: query.ebId,
     ebCode: eb?.ebCode ?? 'EB',
@@ -209,90 +187,35 @@ final hlbAnalyticsProvider = FutureProvider.family<HlbAnalytics, EbMissionQuery>
   );
 });
 
-final missionOfflineStoreProvider = Provider<MissionOfflineStore>((ref) {
-  final store = MissionOfflineStore();
-  store.attachApi(ref.watch(missionApiProvider));
-  return store;
-});
-
-/// Placeholder until HLO PDF metadata supplies the real EB number.
 const kDefaultEbCode = 'HLB';
 
-/// One enumerator → one HLB: reuse existing or create silently (no manual code entry).
 Future<EnumerationBlock> ensureEnumeratorEb(WidgetRef ref, String projectId) async {
-  if (AppConfig.useFirebase) {
-    final cloud = ref.read(firebaseMissionRepositoryProvider);
-    final pid = projectId.isNotEmpty ? projectId : FirebaseMissionRepository.defaultProjectId;
-    final existing = await cloud.listEbs(pid);
-    if (existing.isNotEmpty) {
-      final eb = existing.first;
-      await ref.read(missionLocalFirstProvider).initEb(
-            ebId: eb.id,
-            ebCode: eb.ebCode,
-            projectId: pid,
-          );
-      return eb;
-    }
-    final eb = await cloud.createEb(projectId: pid, ebCode: kDefaultEbCode);
+  final cloud = ref.read(firebaseMissionRepositoryProvider);
+  final pid = projectId.isNotEmpty ? projectId : FirebaseMissionRepository.defaultProjectId;
+  final existing = await cloud.listEbs(pid);
+  if (existing.isNotEmpty) {
+    final eb = existing.first;
     await ref.read(missionLocalFirstProvider).initEb(
           ebId: eb.id,
           ebCode: eb.ebCode,
           projectId: pid,
         );
-    ref.invalidate(ebListProvider(pid));
     return eb;
   }
-  if (AppConfig.standaloneMode) {
-    final registry = ref.read(localRegistryProvider);
-    await registry.init();
-    final existing = registry.getEnumeratorEb(projectId);
-    if (existing != null) {
-      await ref.read(missionLocalFirstProvider).initEb(
-            ebId: existing.id,
-            ebCode: existing.ebCode,
-            projectId: projectId,
-          );
-      return existing;
-    }
-    final eb = await registry.createEb(projectId: projectId, ebCode: kDefaultEbCode);
-    await ref.read(missionLocalFirstProvider).initEb(
-          ebId: eb.id,
-          ebCode: eb.ebCode,
-          projectId: projectId,
-        );
-    ref.invalidate(ebListProvider(projectId));
-    return eb;
-  }
-
-  final ebs = await ref.read(ebListProvider(projectId).future);
-  if (ebs.isNotEmpty) {
-    final eb = ebs.first;
-    await ref.read(missionLocalFirstProvider).initEb(
-          ebId: eb.id,
-          ebCode: eb.ebCode,
-          projectId: projectId,
-        );
-    return eb;
-  }
-  final eb = await ref.read(missionApiProvider).createEb(projectId, ebCode: kDefaultEbCode);
+  final eb = await cloud.createEb(projectId: pid, ebCode: kDefaultEbCode);
   await ref.read(missionLocalFirstProvider).initEb(
         ebId: eb.id,
         ebCode: eb.ebCode,
-        projectId: projectId,
+        projectId: pid,
       );
-  ref.invalidate(ebListProvider(projectId));
+  ref.invalidate(ebListProvider(pid));
   return eb;
 }
 
-/// Sync EB code from parsed HLO PDF sidebar (registry + local cache).
 Future<void> applyPdfEbCode(WidgetRef ref, {required String projectId, required String ebId, required String ebCode}) async {
   final code = ebCode.trim();
   if (code.isEmpty) return;
-  if (AppConfig.standaloneMode) {
-    await ref.read(localRegistryProvider).updateEbCode(projectId, ebId, code);
-  } else if (AppConfig.useFirebase) {
-    await ref.read(firebaseMissionRepositoryProvider).updateEbCode(projectId, ebId, code);
-  }
+  await ref.read(firebaseMissionRepositoryProvider).updateEbCode(projectId, ebId, code);
   await ref.read(missionLocalFirstProvider).updateEbCode(ebId, code);
   ref.invalidate(ebListProvider(projectId));
   ref.invalidate(activeMissionProvider);

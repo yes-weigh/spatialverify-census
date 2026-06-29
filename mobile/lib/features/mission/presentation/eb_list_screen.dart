@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/config/app_config.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/firebase_mission_repository.dart';
-import '../data/mission_service.dart';
 import '../models/mission_models.dart';
 import 'mission_providers.dart';
 
@@ -176,20 +174,8 @@ class _MissionCard extends StatelessWidget {
   }
 }
 
-final missionApiProvider = Provider<MissionApiService>((ref) {
-  return MissionApiService(apiClient: ref.watch(apiClientProvider));
-});
-
 final ebListProvider = FutureProvider.family<List<EnumerationBlock>, String>((ref, projectId) async {
-  if (AppConfig.standaloneMode) {
-    final registry = ref.watch(localRegistryProvider);
-    await registry.init();
-    return registry.listEbs(projectId);
-  }
-  if (AppConfig.useFirebase) {
-    final cloud = ref.watch(firebaseMissionRepositoryProvider);
-    final pid = projectId.isNotEmpty ? projectId : FirebaseMissionRepository.defaultProjectId;
-    return cloud.listEbs(pid);
-  }
-  return ref.watch(missionApiProvider).listEbs(projectId);
+  final cloud = ref.watch(firebaseMissionRepositoryProvider);
+  final pid = projectId.isNotEmpty ? projectId : FirebaseMissionRepository.defaultProjectId;
+  return cloud.listEbs(pid);
 });

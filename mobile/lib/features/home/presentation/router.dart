@@ -2,14 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/models.dart';
-import '../../../core/config/app_config.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/presentation/login_screen.dart';
 import 'home_screen.dart';
 import '../../map/presentation/map_screen.dart';
-import '../../scanner/presentation/scanner_screen.dart';
-import '../../ar/presentation/ar_screen.dart';
 import '../../analytics/presentation/analytics_screen.dart';
 import 'project_detail_screen.dart';
 import '../../conflicts/presentation/conflicts_screen.dart';
@@ -20,11 +17,8 @@ import '../../mission/presentation/building_workflow_screen.dart';
 import '../../mission/presentation/mission_home_screen.dart';
 import '../../mission/presentation/end_of_day_review_screen.dart';
 import '../../mission/presentation/discovery_hub_screen.dart';
-import '../../mission/presentation/mission_game_map_screen.dart';
-import '../../mission/presentation/discovery_camera_screen.dart';
 import '../../mission/presentation/discovery_dashboard_screen.dart';
 import '../../mission/presentation/discovery_replay_screen.dart';
-import '../../mission/presentation/ignored_structures_screen.dart';
 import '../../mission/presentation/start_point_screen.dart';
 import '../../mission/presentation/layout_georef_wizard_screen.dart';
 import '../../mission/presentation/draft_hlb_map_screen.dart';
@@ -34,12 +28,8 @@ final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
 
   return GoRouter(
-    initialLocation: AppConfig.standaloneMode ? '/' : '/login',
+    initialLocation: '/login',
     redirect: (context, state) {
-      if (AppConfig.standaloneMode) {
-        if (state.matchedLocation == '/login') return '/';
-        return null;
-      }
       if (authState.isLoading) return null;
       final isLoggedIn = authState.isAuthenticated;
       final isLoggingIn = state.matchedLocation == '/login';
@@ -74,14 +64,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/map/:projectId',
             builder: (context, state) => MapScreen(
               projectId: state.pathParameters['projectId']!,
-            ),
-          ),
-          GoRoute(
-            path: '/scan/:projectId',
-            builder: (context, state) => ScannerScreen(
-              projectId: state.pathParameters['projectId']!,
-              ebId: state.uri.queryParameters['ebId'],
-              buildingId: state.uri.queryParameters['buildingId'],
             ),
           ),
           GoRoute(
@@ -130,22 +112,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                 '/mission/${state.pathParameters['projectId']}/eb/${state.pathParameters['ebId']}',
           ),
           GoRoute(
-            path: '/mission/:projectId/eb/:ebId/discover-walk',
-            builder: (context, state) => DiscoveryCameraScreen(
-              projectId: state.pathParameters['projectId']!,
-              ebId: state.pathParameters['ebId']!,
-            ),
-          ),
-          GoRoute(
             path: '/mission/:projectId/eb/:ebId/replay',
             builder: (context, state) => DiscoveryReplayScreen(
-              projectId: state.pathParameters['projectId']!,
-              ebId: state.pathParameters['ebId']!,
-            ),
-          ),
-          GoRoute(
-            path: '/mission/:projectId/eb/:ebId/ignored',
-            builder: (context, state) => IgnoredStructuresScreen(
               projectId: state.pathParameters['projectId']!,
               ebId: state.pathParameters['ebId']!,
             ),
@@ -207,10 +175,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
           GoRoute(
-            path: '/ar/:projectId',
-            builder: (context, state) => const ArScreen(),
-          ),
-          GoRoute(
             path: '/analytics/:projectId',
             builder: (context, state) => AnalyticsScreen(
               projectId: state.pathParameters['projectId']!,
@@ -237,22 +201,12 @@ class ProjectListScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Projects'),
         actions: [
-          if (AppConfig.useFirebase)
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'Sign out',
-              onPressed: () async {
-                await ref.read(authStateProvider.notifier).logout();
-                if (context.mounted) context.go('/login');
-              },
-            ),
           IconButton(
-            icon: const Icon(Icons.sync),
-            onPressed: () {
-              final project = ref.read(selectedProjectProvider);
-              if (project != null) {
-                ref.read(syncStateProvider.notifier).sync(project.id);
-              }
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sign out',
+            onPressed: () async {
+              await ref.read(authStateProvider.notifier).logout();
+              if (context.mounted) context.go('/login');
             },
           ),
         ],

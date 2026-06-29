@@ -2,31 +2,23 @@ import 'dart:math' as math;
 
 import 'package:uuid/uuid.dart';
 
-import '../../../core/config/app_config.dart';
 import '../models/mission_models.dart';
 import 'firebase_mission_repository.dart';
+import 'hlb_listing_computer.dart';
 import 'hlb_local_cache.dart';
 import 'hlb_local_state.dart';
 import 'hlb_official_catalog.dart';
 import 'hlb_state_computer.dart';
-import 'mission_offline_store.dart';
-import 'mission_service.dart';
 
-/// Local-first HLB discovery — reads/writes device cache; syncs silently when online.
+/// Local-first HLB work — device cache is source of truth; Firebase syncs when signed in.
 class MissionLocalFirstService {
   MissionLocalFirstService({
-    required MissionApiService api,
     required HlbLocalCache cache,
-    required MissionOfflineStore syncQueue,
     FirebaseMissionRepository? firebase,
-  })  : _api = api,
-        _cache = cache,
-        _sync = syncQueue,
+  })  : _cache = cache,
         _firebase = firebase;
 
-  final MissionApiService _api;
   final HlbLocalCache _cache;
-  final MissionOfflineStore _sync;
   final FirebaseMissionRepository? _firebase;
   final _uuid = const Uuid();
 
@@ -41,19 +33,15 @@ class MissionLocalFirstService {
 
   Future<void> _save(HlbLocalState state) async {
     await _cache.put(state);
-    if (AppConfig.useFirebase && _firebase != null && _firebase.isSignedIn) {
+    if (_firebase != null && _firebase.isSignedIn) {
       try {
         await _firebase.pushEbState(state);
       } catch (_) {}
     }
   }
 
-  /// Persist local HLB state and push to cloud when signed in.
-  Future<void> persistEbState(HlbLocalState state) async {
-    await _save(state);
-  }
+  Future<void> persistEbState(HlbLocalState state) => _save(state);
 
-  /// Keep finalized on-device layout boundaries when cloud copy is stale.
   static HlbLocalState mergePulledState(HlbLocalState local, HlbLocalState remote) {
     final remoteNewer = remote.updatedAt.isAfter(local.updatedAt);
     var merged = remoteNewer ? remote : local;
@@ -79,20 +67,13 @@ class MissionLocalFirstService {
     return merged;
   }
 
-  /// Call when entering an HLB mission. Hydrates from server silently when online.
   Future<void> initEb({
     required String ebId,
     required String ebCode,
     required String projectId,
   }) async {
     await _cache.getOrCreate(ebId: ebId, ebCode: ebCode, projectId: projectId);
-    if (AppConfig.useFirebase && _firebase != null) {
-      await syncInBackground(ebId);
-      return;
-    }
-    if (AppConfig.standaloneMode) return;
     await syncInBackground(ebId);
-    await hydrateOfficialBoundary(ebId);
   }
 
   Future<void> updateEbCode(String ebId, String ebCode) async {
@@ -101,40 +82,73 @@ class MissionLocalFirstService {
     await _save(state.copyWith(ebCode: ebCode));
   }
 
-  /// Pull server state and flush pending writes — never blocks UI.
   Future<void> syncInBackground(String ebId) async {
-    if (AppConfig.useFirebase) {
-      if (_firebase != null && _firebase.isSignedIn) {
-        try {
-          final local = await _cache.get(ebId);
-          if (local == null) return;
-          final remote = await _firebase.pullEbState(local.projectId, ebId);
-          if (remote == null) {
-            await _firebase.pushEbState(local);
-            await _cache.put(local.copyWith(serverSyncedAt: DateTime.now()));
-            return;
-          }
-          if (remote.updatedAt.isAfter(local.updatedAt)) {
-            final merged = mergePulledState(local, remote);
-            await _cache.put(merged.copyWith(serverSyncedAt: DateTime.now()));
-          } else {
-            await _firebase.pushEbState(local);
-            await _cache.put(local.copyWith(serverSyncedAt: DateTime.now()));
-          }
-        } catch (_) {}
-      }
-      return;
-    }
-    if (AppConfig.standaloneMode) return;
-    _sync.attachApi(_api);
+    if (_firebase == null || !_firebase.isSignedIn) return;
     try {
-      if (await _sync.isOnline) {
-        await _sync.flush();
-        final res = await _api.getOfflineSnapshot(ebId);
-        final snapshot = HlbLocalState.fromServerSnapshot(res);
-        await _save(snapshot);
+      final local = await _cache.get(ebId);
+      if (local == null) return;
+      final remote = await _firebase.pullEbState(local.projectId, ebId);
+      if (remote == null) {
+        await _firebase.pushEbState(local);
+        await _cache.put(local.copyWith(serverSyncedAt: DateTime.now()));
+        return;
+      }
+      if (remote.updatedAt.isAfter(local.updatedAt)) {
+        final merged = mergePulledState(local, remote);
+        await _cache.put(merged.copyWith(serverSyncedAt: DateTime.now()));
+      } else {
+        await _firebase.pushEbState(local);
+        await _cache.put(local.copyWith(serverSyncedAt: DateTime.now()));
       }
     } catch (_) {}
+  }
+
+  Future<MissionDashboard> getDashboard(String ebId, {double? latitude, double? longitude}) async {
+    final state = await _load(ebId);
+    return HlbListingComputer.dashboard(state, lat: latitude, lng: longitude);
+  }
+
+  Future<DayReview> getDayReview(String ebId, {double? latitude, double? longitude}) async {
+    final state = await _load(ebId);
+    return HlbListingComputer.dayReview(state, lat: latitude, lng: longitude);
+  }
+
+  Future<List<MissionBuilding>> getRoute(String ebId) async {
+    final state = await _load(ebId);
+    return HlbListingComputer.route(state);
+  }
+
+  Future<Map<String, dynamic>> getCoverage(String ebId) async {
+    final state = await _load(ebId);
+    return HlbListingComputer.coverage(state);
+  }
+
+  Future<void> updateBuildingStatus(
+    String ebId,
+    String buildingId,
+    MissionBuildingStatus status, {
+    String? notes,
+    double? latitude,
+    double? longitude,
+  }) async {
+    var state = await _load(ebId);
+    final statusStr = buildingStatusToApi(status);
+    state = state.copyWith(
+      buildings: [
+        for (final b in state.buildings)
+          if (b.localId == buildingId || b.serverId == buildingId)
+            b.copyWith(
+              status: statusStr,
+              notes: notes ?? b.notes,
+              latitude: latitude ?? b.latitude,
+              longitude: longitude ?? b.longitude,
+            )
+          else
+            b,
+      ],
+    );
+    await _save(state);
+    syncInBackground(ebId);
   }
 
   Future<DiscoveryStatus> getDiscovery(String ebId, {double? latitude, double? longitude}) async {
@@ -171,11 +185,6 @@ class MissionLocalFirstService {
       ],
     );
     await _save(state);
-    await _sync.enqueue(ebId, 'breadcrumb', {
-      'latitude': lat,
-      'longitude': lng,
-      if (accuracy != null) 'accuracy': accuracy,
-    });
     syncInBackground(ebId);
   }
 
@@ -194,7 +203,6 @@ class MissionLocalFirstService {
       ],
     );
     await _save(state);
-    await _sync.enqueue(ebId, 'boundary', {'latitude': latitude, 'longitude': longitude});
     syncInBackground(ebId);
   }
 
@@ -227,13 +235,6 @@ class MissionLocalFirstService {
       ],
     );
     await _save(state);
-    await _sync.enqueue(ebId, 'building', {
-      'latitude': latitude,
-      'longitude': longitude,
-      'buildingType': buildingType,
-      'censusHouseCount': censusHouseCount ?? 1,
-      'buildingNumber': num,
-    });
     syncInBackground(ebId);
   }
 
@@ -263,12 +264,6 @@ class MissionLocalFirstService {
       ],
     );
     await _save(state);
-    await _sync.enqueue(ebId, 'landmark', {
-      'name': name,
-      'landmarkType': normalizedType,
-      'latitude': latitude,
-      'longitude': longitude,
-    });
     syncInBackground(ebId);
   }
 
@@ -303,12 +298,6 @@ class MissionLocalFirstService {
       ],
     );
     await _save(state);
-    await _sync.enqueue(ebId, 'landmark', {
-      'name': existing.name,
-      'landmarkType': existing.landmarkType,
-      'latitude': latitude,
-      'longitude': longitude,
-    });
     syncInBackground(ebId);
   }
 
@@ -337,17 +326,6 @@ class MissionLocalFirstService {
     ));
     state = state.copyWith(gapResolutions: resolutions);
     await _save(state);
-    await _sync.enqueue(ebId, 'gap_resolve', {
-      'gapId': gapId,
-      'resolution': resolution,
-      'gapType': gapType,
-      'gapReason': gapReason,
-      'notes': notes,
-      'latitude': latitude,
-      'longitude': longitude,
-      'resolvedLatitude': resolvedLatitude,
-      'resolvedLongitude': resolvedLongitude,
-    });
     syncInBackground(ebId);
   }
 
@@ -355,11 +333,6 @@ class MissionLocalFirstService {
     var state = await _load(ebId);
     state = state.copyWith(phase: 'listing', blockStatus: 'published');
     await _save(state);
-    try {
-      if (await _sync.isOnline) await _api.finalizeDraftMap(ebId);
-    } catch (_) {
-      await _sync.enqueue(ebId, 'finalize', {});
-    }
   }
 
   ({double minLat, double maxLat, double minLng, double maxLng}) _geoBoundsFromState(HlbLocalState state) {
@@ -504,7 +477,6 @@ class MissionLocalFirstService {
 
   Future<HlbLocalState?> getRawState(String ebId) => _cache.get(ebId);
 
-  /// Quick confirm — default □ Pucca Residential, 1 census house.
   Future<int> quickConfirmStructure(String ebId, {required double latitude, required double longitude}) async {
     final num = await suggestBuildingNumber(ebId, latitude, longitude);
     await discoverBuilding(
@@ -577,9 +549,6 @@ class MissionLocalFirstService {
     }
     state = state.copyWith(boundaryAudit: updated);
     await _save(state);
-    try {
-      if (await _sync.isOnline) await _api.postBoundaryAudit(ebId, event);
-    } catch (_) {}
   }
 
   Future<void> recordOutsideBoundaryDiscovery(
@@ -603,53 +572,21 @@ class MissionLocalFirstService {
       ),
     );
     await _save(state);
-    try {
-      if (await _sync.isOnline) {
-        await _api.postOutsideDiscovery(
-          ebId,
-          latitude: latitude,
-          longitude: longitude,
-          label: label,
-          overridden: overridden,
-        );
-      }
-    } catch (_) {}
   }
 
-  Future<void> hydrateOfficialBoundary(String ebId) async {
-    if (AppConfig.standaloneMode) return;
-    try {
-      if (!await _sync.isOnline) return;
-      final pkg = await _api.getHlbBoundaryMissionByEb(ebId);
-      var state = await _load(ebId);
-      final boundaryJson = pkg['boundary'] as Map<String, dynamic>?;
-      if (boundaryJson == null) return;
-      state = state.copyWith(
-        officialBoundary: LocalOfficialBoundary.fromServer(boundaryJson),
-        boundaryAudit: pkg['audit'] != null
-            ? LocalBoundaryAudit.fromJson(Map<String, dynamic>.from(pkg['audit'] as Map))
-            : state.boundaryAudit,
-      );
-      await _save(state);
-    } catch (_) {}
-  }
-
-  /// Persist mission intelligence hypotheses for offline discovery.
   Future<void> saveMissionIntelligence(String ebId, Map<String, dynamic> intelligence) async {
-    try {
-      final state = await _load(ebId);
-      await _save(state.copyWith(
-        missionIntelligence: intelligence,
-        layoutGeoref: {
-          ...?state.layoutGeoref,
-          'missionIntelligence': intelligence,
-          'potentialStructures': (intelligence['hypotheses'] as Map?)?['observationTargets'] ??
-              (intelligence['hypotheses'] as Map?)?['structures'] ??
-              [],
-          'digitalTwin': intelligence['digitalTwin'],
-        },
-      ));
-    } catch (_) {}
+    final state = await _load(ebId);
+    await _save(state.copyWith(
+      missionIntelligence: intelligence,
+      layoutGeoref: {
+        ...?state.layoutGeoref,
+        'missionIntelligence': intelligence,
+        'potentialStructures': (intelligence['hypotheses'] as Map?)?['observationTargets'] ??
+            (intelligence['hypotheses'] as Map?)?['structures'] ??
+            [],
+        'digitalTwin': intelligence['digitalTwin'],
+      },
+    ));
   }
 }
 

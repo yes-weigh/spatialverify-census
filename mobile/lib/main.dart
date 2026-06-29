@@ -32,9 +32,7 @@ void main() async {
   final storage = SecureLocalStorage();
   await storage.init();
 
-  if (AppConfig.useFirebase) {
-    await bootstrapFirebase();
-  }
+  await bootstrapFirebase();
 
   final hlbCache = HlbLocalCache();
   await hlbCache.init();

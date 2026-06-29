@@ -1,4 +1,3 @@
-import '../models/discovery_models.dart';
 import 'hlb_geo_engine.dart';
 import 'hlb_local_state.dart';
 
@@ -75,56 +74,6 @@ class MissionIntelligenceEngine {
       if (!near && !ignored) count++;
     }
     return count;
-  }
-
-  /// Satellite hypotheses within radius — shown when enumerator approaches.
-  static List<DiscoveryCandidate> nearbyPredictions(
-    HlbLocalState state,
-    double lat,
-    double lng, {
-    double radiusM = 30,
-    Set<String> handledIds = const {},
-  }) {
-    final out = <DiscoveryCandidate>[];
-    for (final h in structureHypotheses(state)) {
-      final id = h['id'] as String? ?? '';
-      if (handledIds.contains(id)) continue;
-      final hLat = (h['lat'] as num?)?.toDouble();
-      final hLng = (h['lng'] as num?)?.toDouble();
-      if (hLat == null || hLng == null) continue;
-      final dist = HlbGeoEngine.haversineMeters(lat, lng, hLat, hLng);
-      if (dist > radiusM) continue;
-      out.add(DiscoveryCandidate.fromSatelliteHypothesis(
-        id: 'sat_$id',
-        hypothesisId: id,
-        label: h['label'] as String? ?? 'Observation target',
-        confidence: (h['confidence'] as num?)?.toDouble() ?? 0.7,
-        latitude: hLat,
-        longitude: hLng,
-        distanceMeters: dist,
-      ));
-    }
-    out.sort((a, b) => (a.distanceMeters ?? 999).compareTo(b.distanceMeters ?? 999));
-    return out;
-  }
-
-  /// Merge live camera detections with approaching satellite predictions.
-  static List<DiscoveryCandidate> merge(
-    List<DiscoveryCandidate> camera,
-    List<DiscoveryCandidate> satellite,
-  ) {
-    if (satellite.isEmpty) return camera;
-    final merged = [...camera];
-    for (final s in satellite) {
-      final dup = camera.any((c) {
-        if (c.latitude == null || c.longitude == null || s.latitude == null || s.longitude == null) {
-          return false;
-        }
-        return HlbGeoEngine.haversineMeters(c.latitude!, c.longitude!, s.latitude!, s.longitude!) < 15;
-      });
-      if (!dup) merged.add(s);
-    }
-    return merged;
   }
 }
 

@@ -210,12 +210,6 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
             label: 'Adjacent HLB reference',
             onTap: () => _markAdjacentHlbAtGps(context),
           ),
-        if (d.hasOfficialBoundary)
-          MissionMoreSheetItem(
-            icon: Icons.videocam_outlined,
-            label: 'Camera discovery walk',
-            onTap: () => _startCapture(context, d),
-          ),
         if (d.hasOfficialBoundary && _session?.startPoint != null)
           MissionMoreSheetItem(
             icon: Icons.navigation_outlined,
@@ -711,18 +705,6 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
       rotationDegrees: result.rotationDegrees,
     );
     ref.invalidate(draftMapProvider(_query));
-  }
-
-  Future<void> _startCapture(BuildContext context, DiscoveryStatus d) async {
-    final local = ref.read(missionLocalFirstProvider);
-    await local.recordBoundaryAudit(widget.ebId, 'discovery_started');
-    ref.invalidate(discoveryStatusProvider(_query));
-    if (context.mounted) {
-      await context.push('/mission/${widget.projectId}/eb/${widget.ebId}/discover-walk');
-      await _reloadSession();
-      ref.invalidate(discoveryStatusProvider(_query));
-      ref.invalidate(draftMapProvider(_query));
-    }
   }
 
   void _showDraftSheet(BuildContext context) {

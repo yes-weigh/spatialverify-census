@@ -1,5 +1,5 @@
 name: spatialverify
-description: Geospatial survey, verification, mapping, and AR-assisted field data collection platform.
+description: Geospatial survey, verification, and HLB mapping platform.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -25,7 +25,6 @@ dependencies:
   geolocator: ^13.0.2
   permission_handler: ^11.3.1
   connectivity_plus: ^6.1.1
-  camera: ^0.11.0+2
   mapbox_maps_flutter: ^2.4.0
   image: ^4.3.0
   vector_math: ^2.1.4
@@ -69,7 +68,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/models/
     - assets/icons/
     - assets/images/
 

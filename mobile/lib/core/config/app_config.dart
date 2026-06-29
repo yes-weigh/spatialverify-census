@@ -1,16 +1,6 @@
 import '../brand/app_brand.dart';
 
 class AppConfig {
-  static const String apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:3000/api/v1',
-  );
-
-  static const String wsBaseUrl = String.fromEnvironment(
-    'WS_BASE_URL',
-    defaultValue: 'ws://10.0.2.2:3000/ws',
-  );
-
   static const String mapboxAccessToken = String.fromEnvironment(
     'MAPBOX_ACCESS_TOKEN',
     defaultValue: '',
@@ -24,23 +14,7 @@ class AppConfig {
 
   static bool get hasGoogleMaps => googleMapsApiKey.isNotEmpty;
 
-  /// When true, no census backend — all mission data on device (+ Google Maps API only).
-  static const bool standaloneMode = bool.fromEnvironment(
-    'STANDALONE_MODE',
-    defaultValue: false,
-  );
-
-  /// Cloud sync via Firebase Auth + Firestore + Storage (multi-device field work).
-  static const bool useFirebase = bool.fromEnvironment(
-    'USE_FIREBASE',
-    defaultValue: true,
-  );
-
-  /// Local PDF import + on-device CV (standalone and Firebase modes).
-  static bool get useLocalImport => !useRestBackend;
-
-  /// Legacy REST API mode when Firebase is off and standalone is off.
-  static bool get useRestBackend => !standaloneMode && !useFirebase;
+  static const bool useLocalImport = true;
 
   static const String appName = AppBrand.name;
   static const int syncBatchSize = 50;

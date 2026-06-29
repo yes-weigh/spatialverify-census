@@ -105,18 +105,9 @@ class DiscoveryHubScreen extends ConsumerWidget {
                 analyticsAsync.when(
                   loading: () => const SizedBox.shrink(),
                   error: (_, __) => const SizedBox.shrink(),
-                  data: (a) => Column(
-                    children: [
-                      if (a.ignoredCount > 0) ...[
-                        _IgnoredCounterCard(
-                          count: a.ignoredCount,
-                          onReview: () => context.push('/mission/$projectId/eb/$ebId/ignored'),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      if (a.streets.isNotEmpty) _StreetCompletionSection(streets: a.streets),
-                    ],
-                  ),
+                  data: (a) => a.streets.isNotEmpty
+                      ? _StreetCompletionSection(streets: a.streets)
+                      : const SizedBox.shrink(),
                 ),
                 const SizedBox(height: 16),
                 _GapSummaryCard(
@@ -124,8 +115,8 @@ class DiscoveryHubScreen extends ConsumerWidget {
                   onReview: () => context.push('/mission/$projectId/eb/$ebId/gaps'),
                 ),
                 const SizedBox(height: 24),
-                _StartWalkButton(
-                  onStartWalk: () => context.push('/mission/$projectId/eb/$ebId/discover-walk'),
+                _OpenMapButton(
+                  onOpenMap: () => context.go('/mission/$projectId/eb/$ebId'),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -244,7 +235,7 @@ class _MissionIntelligenceCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          const Text('Predicted world — validate on your walk', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          const Text('Predicted targets from your layout map — mark on the map', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
           const SizedBox(height: 12),
           Wrap(
             spacing: 16,
@@ -396,38 +387,45 @@ class _MetricTile extends StatelessWidget {
   }
 }
 
-class _IgnoredCounterCard extends StatelessWidget {
-  const _IgnoredCounterCard({required this.count, required this.onReview});
-  final int count;
-  final VoidCallback onReview;
+class _OpenMapButton extends StatelessWidget {
+  const _OpenMapButton({required this.onOpenMap});
+
+  final VoidCallback onOpenMap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2218),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Observation Targets Ignored: $count',
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: Colors.orange),
+    return Material(
+      elevation: 12,
+      shadowColor: const Color(0xFF42A5F5).withValues(alpha: 0.4),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onOpenMap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          height: 72,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF42A5F5), Color(0xFF1565C0)],
+            ),
           ),
-          const SizedBox(height: 6),
-          const Text(
-            'Many missed buildings come from accidental ignores — review before finalizing.',
-            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.map_outlined, color: Colors.white, size: 28),
+              SizedBox(width: 12),
+              Text(
+                'OPEN MAP',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(onPressed: onReview, child: const Text('Review Ignored Structures')),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -530,50 +528,6 @@ class _GapSummaryCard extends StatelessWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _StartWalkButton extends StatelessWidget {
-  const _StartWalkButton({required this.onStartWalk});
-
-  final VoidCallback onStartWalk;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      elevation: 12,
-      shadowColor: const Color(0xFF42A5F5).withValues(alpha: 0.4),
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        onTap: onStartWalk,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          height: 72,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: const LinearGradient(
-              colors: [Color(0xFF42A5F5), Color(0xFF1565C0)],
-            ),
-          ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.videocam_outlined, color: Colors.white, size: 28),
-              SizedBox(width: 12),
-              Text(
-                'START DISCOVERY WALK',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

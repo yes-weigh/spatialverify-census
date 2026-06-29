@@ -27,7 +27,6 @@ import '../models/manual_upload_draft.dart';
 import '../models/pdf_georef_models.dart';
 import '../widgets/hlo_pdf_georef_editor.dart';
 import 'landmark_verification_panel.dart';
-import '../data/layout_georef_service.dart';
 import '../data/mission_local_first_service.dart';
 import '../data/mission_map_helpers.dart';
 import '../data/satellite_align_math.dart';
@@ -41,10 +40,6 @@ import '../widgets/mission_navigation_banner.dart';
 import '../widgets/mission_satellite_map.dart';
 import '../widgets/pdf_overlay_fine_tune_map.dart';
 import 'mission_providers.dart';
-
-final layoutGeorefApiProvider = Provider<LayoutGeorefApiService>((ref) {
-  return LayoutGeorefApiService(apiClient: ref.watch(apiClientProvider));
-});
 
 enum _WizardPhase { upload, analyzing, pdfEditor, verifyLandmarks, mapExperience, adjust, fineTune }
 
@@ -142,7 +137,6 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
 
   late AnimationController _boundaryController;
 
-  LayoutGeorefApiService get _api => ref.read(layoutGeorefApiProvider);
   LocalMissionImportService get _localImport => ref.read(localMissionImportProvider);
   MissionLocalFirstService get _local => ref.read(missionLocalFirstProvider);
 
@@ -1079,11 +1073,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
 
     final updatedIntel = MissionIntelligencePackage.fromJson(raw);
 
-    if (AppConfig.useLocalImport) {
-      await _localImport.saveGpsBoundary(widget.ebId, newBoundary);
-    } else if (intel.gpsBoundary.isNotEmpty) {
-      await _api.saveGpsBoundary(widget.ebId, newBoundary);
-    }
+    await _localImport.saveGpsBoundary(widget.ebId, newBoundary);
 
     if (!mounted) return;
     setState(() {
@@ -1832,20 +1822,14 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       _pins = [];
     });
 
-    if (AppConfig.useLocalImport) {
-      setState(() {
-        _phase = _WizardPhase.pdfEditor;
-        _preparingPdf = true;
-      });
-    } else {
-      setState(() => _phase = _WizardPhase.analyzing);
-      _startAnalysisAnimation();
-    }
+    setState(() {
+      _phase = _WizardPhase.pdfEditor;
+      _preparingPdf = true;
+    });
 
     try {
       final pos = await _resolveUploadPosition();
-      if (AppConfig.useLocalImport) {
-        final manual = await _localImport.prepareManualUpload(
+      final manual = await _localImport.prepareManualUpload(
           ebId: widget.ebId,
           mapFile: mapFile,
           mapBytes: mapBytes,
@@ -1871,33 +1855,13 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
         // Show the PDF editor immediately; trace boundary in the background.
         unawaited(_trackBoundary());
         return;
-      }
-
-      if (mapFile == null) {
-        throw Exception('PDF upload is not supported without a file on this platform');
-      }
-      final seed = await MissionSeedLocationResolver().resolve(
-        mapFile: mapFile,
-        userLat: pos.latitude,
-        userLng: pos.longitude,
-      );
-      final session = await _api.uploadLayout(widget.ebId, file: mapFile);
-      _layoutImageUrl = session.layoutImageUrl;
-      final intel = await _api.generateIntelligence(widget.ebId, seed.lat, seed.lng);
-      _analysisTimer?.cancel();
-      _intelligence = intel;
-      _imageBounds = intel.imageBounds;
-      _baseBounds = intel.imageBounds;
-      _mapCenter = LatLng(seed.lat, seed.lng);
-      _placementNotice = seed.warning;
-      await _startMapReveal();
     } catch (e) {
       _analysisTimer?.cancel();
       if (!mounted) return;
       setState(() {
         _error = friendlyNetworkError(e);
         _preparingPdf = false;
-        if (AppConfig.useLocalImport) _phase = _WizardPhase.upload;
+        _phase = _WizardPhase.upload;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_error ?? 'Upload failed')),
@@ -2016,11 +1980,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
 
     final updatedIntel = MissionIntelligencePackage.fromJson(raw);
 
-    if (AppConfig.useLocalImport) {
-      await _localImport.saveGpsBoundary(widget.ebId, newBoundary);
-    } else if (intel.gpsBoundary.isNotEmpty) {
-      await _api.saveGpsBoundary(widget.ebId, newBoundary);
-    }
+    await _localImport.saveGpsBoundary(widget.ebId, newBoundary);
 
     setState(() {
       _intelligence = updatedIntel;
@@ -2049,47 +2009,38 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
     });
 
     try {
-      if (AppConfig.useLocalImport) {
-        final state = await _local.getRawState(widget.ebId);
-        final raw = _intelligence?.raw;
-        if (raw == null || _intelligence!.gpsBoundary.length < 3) {
-          throw Exception('Mission intelligence not ready');
-        }
-        final pdfCode = _manualDraft?.metadata?.ebNo?.trim();
-        final ebCode = (pdfCode != null && pdfCode.isNotEmpty)
-            ? pdfCode
-            : (state?.ebCode ?? kDefaultEbCode);
-        if (pdfCode != null && pdfCode.isNotEmpty) {
-          await applyPdfEbCode(
-            ref,
-            projectId: widget.projectId,
-            ebId: widget.ebId,
-            ebCode: pdfCode,
-          );
-        }
-        await _localImport.finalizeMission(
-          ebId: widget.ebId,
-          ebCode: ebCode,
-          intelligence: raw,
-          gpsBoundary: _intelligence!.gpsBoundary,
-        );
-        final finalized = await _local.getRawState(widget.ebId);
-        if (finalized != null) {
-          await _local.persistEbState(finalized);
-        }
-        await ref.read(localRegistryProvider).updateEbStatus(
-              widget.projectId,
-              widget.ebId,
-              status: 'published',
-            );
-      } else {
-        await _api.confirmIntelligence(widget.ebId);
-        await _api.finalize(widget.ebId);
-        if (_intelligence?.raw != null) {
-          await _local.saveMissionIntelligence(widget.ebId, _intelligence!.raw!);
-        }
-        await _local.hydrateOfficialBoundary(widget.ebId);
+      final state = await _local.getRawState(widget.ebId);
+      final raw = _intelligence?.raw;
+      if (raw == null || _intelligence!.gpsBoundary.length < 3) {
+        throw Exception('Mission intelligence not ready');
       }
+      final pdfCode = _manualDraft?.metadata?.ebNo?.trim();
+      final ebCode = (pdfCode != null && pdfCode.isNotEmpty)
+          ? pdfCode
+          : (state?.ebCode ?? kDefaultEbCode);
+      if (pdfCode != null && pdfCode.isNotEmpty) {
+        await applyPdfEbCode(
+          ref,
+          projectId: widget.projectId,
+          ebId: widget.ebId,
+          ebCode: pdfCode,
+        );
+      }
+      await _localImport.finalizeMission(
+        ebId: widget.ebId,
+        ebCode: ebCode,
+        intelligence: raw,
+        gpsBoundary: _intelligence!.gpsBoundary,
+      );
+      final finalized = await _local.getRawState(widget.ebId);
+      if (finalized != null) {
+        await _local.persistEbState(finalized);
+      }
+      await ref.read(firebaseMissionRepositoryProvider).updateEbStatus(
+            widget.projectId,
+            widget.ebId,
+            status: 'published',
+          );
       ref.invalidate(discoveryStatusProvider(EbMissionQuery(ebId: widget.ebId, projectId: widget.projectId)));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

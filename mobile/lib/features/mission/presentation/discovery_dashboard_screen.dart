@@ -32,8 +32,9 @@ class DiscoveryDashboardScreen extends ConsumerWidget {
         title: const Text('Discovery Dashboard'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.videocam_outlined),
-            onPressed: () => context.push('/mission/$projectId/eb/$ebId/discover-walk'),
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'Open map',
+            onPressed: () => context.go('/mission/$projectId/eb/$ebId'),
           ),
         ],
       ),

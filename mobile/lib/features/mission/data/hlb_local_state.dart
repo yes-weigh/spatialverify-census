@@ -269,6 +269,8 @@ class LocalBuilding {
     required this.longitude,
     required this.mapX,
     required this.mapY,
+    this.status = 'not_visited',
+    this.notes,
   });
 
   final String localId;
@@ -280,6 +282,34 @@ class LocalBuilding {
   final double longitude;
   final double mapX;
   final double mapY;
+  final String status;
+  final String? notes;
+
+  LocalBuilding copyWith({
+    int? buildingNumber,
+    int? censusHouseCount,
+    String? buildingType,
+    double? latitude,
+    double? longitude,
+    double? mapX,
+    double? mapY,
+    String? status,
+    String? notes,
+  }) {
+    return LocalBuilding(
+      localId: localId,
+      serverId: serverId,
+      buildingNumber: buildingNumber ?? this.buildingNumber,
+      censusHouseCount: censusHouseCount ?? this.censusHouseCount,
+      buildingType: buildingType ?? this.buildingType,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      mapX: mapX ?? this.mapX,
+      mapY: mapY ?? this.mapY,
+      status: status ?? this.status,
+      notes: notes ?? this.notes,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'localId': localId,
@@ -291,6 +321,8 @@ class LocalBuilding {
         'longitude': longitude,
         'mapX': mapX,
         'mapY': mapY,
+        'status': status,
+        if (notes != null) 'notes': notes,
       };
 
   factory LocalBuilding.fromJson(Map<String, dynamic> json) => LocalBuilding(
@@ -303,6 +335,8 @@ class LocalBuilding {
         longitude: (json['longitude'] as num).toDouble(),
         mapX: (json['mapX'] as num).toDouble(),
         mapY: (json['mapY'] as num).toDouble(),
+        status: json['status'] as String? ?? 'not_visited',
+        notes: json['notes'] as String?,
       );
 
   factory LocalBuilding.fromServer(Map<String, dynamic> json) => LocalBuilding(

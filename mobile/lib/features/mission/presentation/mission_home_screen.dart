@@ -7,7 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../models/mission_models.dart';
 import '../utils/mission_navigation.dart';
 import '../widgets/bearing_arrow.dart';
-import 'eb_list_screen.dart';
+import '../presentation/mission_providers.dart';
 import 'end_of_day_review_screen.dart';
 
 /// The core enumerator screen — personal mission assistant.
@@ -37,7 +37,7 @@ class _TodaysMissionScreenState extends ConsumerState<TodaysMissionScreen> with 
       ebId: widget.ebId,
       onPosition: _onPositionUpdate,
       onBreadcrumb: (pos) {
-        ref.read(missionApiProvider).addBreadcrumb(
+        ref.read(missionLocalFirstProvider).addBreadcrumb(
               widget.ebId,
               pos.latitude,
               pos.longitude,
@@ -65,7 +65,8 @@ class _TodaysMissionScreenState extends ConsumerState<TodaysMissionScreen> with 
     _arrivalHandled.add(building.id);
     setState(() => _learningPin = true);
     try {
-      await ref.read(missionApiProvider).updateBuildingStatus(
+      await ref.read(missionLocalFirstProvider).updateBuildingStatus(
+            widget.ebId,
             building.id,
             MissionBuildingStatus.visited,
             latitude: pos.latitude,
@@ -428,7 +429,7 @@ class _CurrentBuildingCard extends StatelessWidget {
 typedef DashboardKey = ({String ebId, double? lat, double? lng});
 
 final missionDashboardProvider = FutureProvider.family<MissionDashboard, DashboardKey>((ref, key) async {
-  return ref.watch(missionApiProvider).getDashboard(
+  return ref.watch(missionLocalFirstProvider).getDashboard(
         key.ebId,
         latitude: key.lat,
         longitude: key.lng,
@@ -436,11 +437,11 @@ final missionDashboardProvider = FutureProvider.family<MissionDashboard, Dashboa
 });
 
 final missionRouteProvider = FutureProvider.family<List<MissionBuilding>, String>((ref, ebId) async {
-  return ref.watch(missionApiProvider).getRoute(ebId);
+  return ref.watch(missionLocalFirstProvider).getRoute(ebId);
 });
 
 final missionCoverageProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, ebId) async {
-  return ref.watch(missionApiProvider).getCoverage(ebId);
+  return ref.watch(missionLocalFirstProvider).getCoverage(ebId);
 });
 
 typedef MissionHomeScreen = TodaysMissionScreen;
