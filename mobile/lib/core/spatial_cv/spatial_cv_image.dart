@@ -103,8 +103,8 @@ int layoutMapPanelLeftPx(RgbImage image) {
   );
 }
 
-/// Crops to the bounding box of non-white content (removes PDF page margins).
-img.Image trimWhiteMargins(
+/// Bounding box of non-white content on a layout sheet (before sidebar crop).
+({int left, int top, int width, int height})? detectLayoutContentBounds(
   img.Image src, {
   int threshold = 247,
   int minSpan = 40,
@@ -124,10 +124,9 @@ img.Image trimWhiteMargins(
     }
   }
 
-  if (maxX <= minX || maxY <= minY) return src;
-  if (maxX - minX + 1 < minSpan || maxY - minY + 1 < minSpan) return src;
+  if (maxX <= minX || maxY <= minY) return null;
+  if (maxX - minX + 1 < minSpan || maxY - minY + 1 < minSpan) return null;
 
-  // Ignore tiny noise at the edges; keep a 1px pad so black map borders are intact.
   minX = math.max(0, minX - 1);
   minY = math.max(0, minY - 1);
   maxX = math.min(src.width - 1, maxX + 1);
@@ -135,9 +134,28 @@ img.Image trimWhiteMargins(
 
   final width = maxX - minX + 1;
   final height = maxY - minY + 1;
-  if (width == src.width && height == src.height) return src;
+  if (width == src.width && height == src.height) {
+    return (left: 0, top: 0, width: src.width, height: src.height);
+  }
+  return (left: minX, top: minY, width: width, height: height);
+}
 
-  return img.copyCrop(src, x: minX, y: minY, width: width, height: height);
+/// Crops to the bounding box of non-white content (removes PDF page margins).
+img.Image trimWhiteMargins(
+  img.Image src, {
+  int threshold = 247,
+  int minSpan = 40,
+}) {
+  final bounds = detectLayoutContentBounds(src, threshold: threshold, minSpan: minSpan);
+  if (bounds == null) return src;
+  if (bounds.width == src.width && bounds.height == src.height) return src;
+  return img.copyCrop(
+    src,
+    x: bounds.left,
+    y: bounds.top,
+    width: bounds.width,
+    height: bounds.height,
+  );
 }
 
 img.Image cropHloSatellitePanel(img.Image src) {
@@ -153,7 +171,15 @@ img.Image cropHloSatellitePanel(img.Image src) {
   );
 }
 
-/// Trim Census layout PDF margins and isolate the satellite map panel for Google overlay.
+/// Trims page margins only — keeps left metadata panel and form borders.
+Uint8List prepareFormSheetImageBytes(Uint8List bytes) {
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return bytes;
+  final trimmed = trimWhiteMargins(decoded);
+  return Uint8List.fromList(img.encodePng(trimmed));
+}
+
+/// Optional crop — trims page margins and removes the left legend column for satellite overlay.
 Uint8List prepareLayoutMapImageBytes(Uint8List bytes) {
   final decoded = img.decodeImage(bytes);
   if (decoded == null) return bytes;

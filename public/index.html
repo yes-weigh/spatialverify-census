@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpatialVerify Census</title>
+  <meta name="description" content="Field census app for HLB mapping, layout georeferencing, and house listing.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div class="badge">Field census</div>
+      <h1>SpatialVerify Census</h1>
+      <p class="tagline">
+        Offline-first geospatial survey for HLB mapping, layout georeferencing, and house listing.
+      </p>
+    </header>
+
+    <section class="card download-card" aria-labelledby="download-heading">
+      <h2 id="download-heading">Download for Android</h2>
+      <p class="hint">Install the latest build directly on your field device.</p>
+
+      <div id="release-status" class="status" role="status" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        Checking for the latest release…
+      </div>
+
+      <a id="download-btn" class="download-btn hidden" href="#" download>
+        Download APK
+      </a>
+
+      <dl id="release-meta" class="release-meta hidden">
+        <div>
+          <dt>Version</dt>
+          <dd id="meta-version">—</dd>
+        </div>
+        <div>
+          <dt>Build</dt>
+          <dd id="meta-build">—</dd>
+        </div>
+        <div>
+          <dt>Published</dt>
+          <dd id="meta-published">—</dd>
+        </div>
+      </dl>
+
+      <p id="release-notes" class="release-notes hidden"></p>
+    </section>
+
+    <section class="features">
+      <article>
+        <h3>Works offline</h3>
+        <p>Mission data is stored on-device first, then syncs when you are back online.</p>
+      </article>
+      <article>
+        <h3>Map-ready</h3>
+        <p>Georeference layouts and capture house listings in the field.</p>
+      </article>
+      <article>
+        <h3>Auto updates</h3>
+        <p>Installed apps can pull newer builds over the air from this release channel.</p>
+      </article>
+    </section>
+
+    <footer>
+      <p>SpatialVerify Census · Firebase-backed field operations</p>
+    </footer>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

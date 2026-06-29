@@ -62,6 +62,7 @@ class HlbLocalState {
     Map<String, dynamic>? layoutGeoref,
     Map<String, dynamic>? missionIntelligence,
     bool clearOfficialBoundary = false,
+    bool clearMissionIntelligence = false,
     bool clearBoundaryAudit = false,
     DateTime? updatedAt,
     DateTime? serverSyncedAt,
@@ -84,7 +85,9 @@ class HlbLocalState {
       officialBoundary: clearOfficialBoundary ? null : (officialBoundary ?? this.officialBoundary),
       boundaryAudit: clearBoundaryAudit ? null : (boundaryAudit ?? this.boundaryAudit),
       layoutGeoref: layoutGeoref ?? this.layoutGeoref,
-      missionIntelligence: missionIntelligence ?? this.missionIntelligence,
+      missionIntelligence: clearMissionIntelligence
+          ? null
+          : (missionIntelligence ?? this.missionIntelligence),
       updatedAt: updatedAt ?? DateTime.now(),
       serverSyncedAt: serverSyncedAt ?? this.serverSyncedAt,
     );
@@ -606,18 +609,21 @@ class LocalRoadSegment {
     required this.points,
     this.segmentType = 'pucca_road',
     this.name,
-  });
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
 
   final String localId;
   final List<({double lat, double lng})> points;
   final String segmentType;
   final String? name;
+  final DateTime createdAt;
 
   Map<String, dynamic> toJson() => {
         'localId': localId,
         'points': points.map((p) => {'lat': p.lat, 'lng': p.lng}).toList(),
         'segmentType': segmentType,
         if (name != null && name!.isNotEmpty) 'name': name,
+        'createdAt': createdAt.toIso8601String(),
       };
 
   factory LocalRoadSegment.fromJson(Map<String, dynamic> json) => LocalRoadSegment(
@@ -630,6 +636,7 @@ class LocalRoadSegment {
           return t == 'road' ? 'pucca_road' : t;
         }(),
         name: json['name'] as String?,
+        createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
       );
 }
 

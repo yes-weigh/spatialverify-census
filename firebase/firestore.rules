@@ -22,7 +22,13 @@ service cloud.firestore {
       }
     }
 
-    // OTA release metadata (written by CI service account / admin only).
+    // Public release metadata for the download landing page.
+    match /system/android_release {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Other system docs remain signed-in only.
     match /system/{docId} {
       allow read: if isSignedIn();
       allow write: if false;

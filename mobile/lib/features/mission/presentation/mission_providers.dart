@@ -11,6 +11,7 @@ import '../data/mission_local_first_service.dart';
 import '../data/discovery_analytics.dart';
 import '../data/hlb_local_state.dart';
 import '../data/firebase_mission_repository.dart';
+import '../data/hlb_export_template_layout.dart';
 import '../models/mission_models.dart';
 import '../utils/mission_navigation.dart';
 import '../widgets/bearing_arrow.dart';
@@ -112,6 +113,12 @@ final missionIntelligenceProvider = FutureProvider.family<MissionIntelligenceSum
 final draftMapProvider = FutureProvider.family<DraftHlbMap, EbMissionQuery>((ref, query) async {
   await _ensureEbInitialized(ref, query);
   return ref.watch(missionLocalFirstProvider).getDraftMap(query.ebId);
+});
+
+final hlbExportTemplateProvider = FutureProvider.family<HlbExportTemplateLayout, EbMissionQuery>((ref, query) async {
+  await _ensureEbInitialized(ref, query);
+  final state = await ref.read(missionLocalFirstProvider).getRawState(query.ebId);
+  return resolveHlbExportTemplate(state?.layoutGeoref, query.ebId);
 });
 
 class CoverageGapsQuery {

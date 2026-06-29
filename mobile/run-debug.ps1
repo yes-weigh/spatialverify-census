@@ -1,16 +1,28 @@
 # Live debug on USB-connected Android phone (SpatialVerify)
 param(
-  [switch]$Pub,       # run "flutter pub get" (skipped by default for speed)
-  [switch]$Clean,     # "flutter clean" before run (use after native/plugin changes)
-  [switch]$Attach,    # attach to app already running on phone (fastest re-connect)
-  [switch]$NoBuild    # skip Gradle when APK is already installed (Dart-only tweaks)
+  [switch]$Pub,           # force "flutter pub get" (usually not needed — see script help)
+  [switch]$Clean,         # "flutter clean" before run (use after native/plugin changes)
+  [switch]$Attach,        # attach to app already running on phone (fastest re-connect)
+  [switch]$NoBuild,       # skip Gradle when APK is already installed (Dart-only tweaks)
+  [switch]$AllDeviceLogs  # also stream full adb logcat in a second window
 )
+
+function Start-FilteredDeviceLogcat {
+  param([string]$DeviceId)
+  $adb = (Get-Command adb -ErrorAction SilentlyContinue).Source
+  if (-not $adb) { return }
+
+  adb -s $DeviceId logcat -c 2>$null | Out-Null
+  Start-Process -FilePath $adb -ArgumentList @('-s', $DeviceId, 'logcat', '-s', 'flutter') -WindowStyle Normal | Out-Null
+}
 
 $env:PATH = "d:\census\tools\flutter\bin;d:\census\tools\android-sdk\platform-tools;" + $env:PATH
 $env:ANDROID_HOME = "d:\census\tools\android-sdk"
 $env:ANDROID_SDK_ROOT = "d:\census\tools\android-sdk"
 $env:TEMP = "d:\census\tmp"
 $env:TMP = "d:\census\tmp"
+# A previous run may have set this; newer adb rejects "*:S" and then all adb commands fail.
+Remove-Item Env:ANDROID_LOG_TAGS -ErrorAction SilentlyContinue
 
 Set-Location $PSScriptRoot
 
@@ -86,6 +98,7 @@ if ($needsPubGet) {
 
 if ($Attach) {
   Write-Host "Attaching to running app (no rebuild). Press q to detach." -ForegroundColor Cyan
+  if ($AllDeviceLogs) { Start-FilteredDeviceLogcat -DeviceId $deviceId }
   flutter attach -d $deviceId
   exit $LASTEXITCODE
 }
@@ -102,7 +115,17 @@ Write-Host '  Re-run only after pubspec.yaml, Gradle, or --dart-define changes.'
 Write-Host '  Faster reconnect: .\run-debug.ps1 -Attach'
 Write-Host '  Skip Gradle if APK installed: .\run-debug.ps1 -NoBuild'
 Write-Host '  After plugin/native changes: .\run-debug.ps1 -Pub -Clean'
+Write-Host '  -Pub = force pub get; skip it for normal Dart edits (auto-runs if packages missing)'
+Write-Host '  Maps/MIUI native log spam is harmless; ignore D/Surface and ProxyAndroidLogger lines.' -ForegroundColor DarkGray
+if ($AllDeviceLogs) {
+  Write-Host '  Opening filtered flutter logcat in a second window (-AllDeviceLogs).' -ForegroundColor DarkGray
+}
 Write-Host ''
+
+adb -s $deviceId logcat -c 2>$null | Out-Null
+if ($AllDeviceLogs) {
+  Start-FilteredDeviceLogcat -DeviceId $deviceId
+}
 
 flutter @flutterArgs
 exit $LASTEXITCODE

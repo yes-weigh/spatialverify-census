@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "firebase/**"
+      - "public/**"
       - "firebase.json"
       - ".firebaserc"
       - ".github/workflows/firebase-deploy.yml"
@@ -36,5 +37,10 @@ jobs:
 
       - name: Deploy Storage rules
         run: firebase deploy --only storage --project spatialverify-census --non-interactive
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+
+      - name: Deploy Hosting
+        run: firebase deploy --only hosting --project spatialverify-census --non-interactive
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

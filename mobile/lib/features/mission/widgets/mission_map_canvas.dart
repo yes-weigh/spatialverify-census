@@ -32,10 +32,14 @@ class MissionMapCanvas extends StatelessWidget {
     this.hlbLandmarks = const [],
     this.hlbLineFeatures = const [],
     this.lineDraftPoints = const [],
+    this.lineDraftCursor,
+    this.lineDraftSegmentType,
     this.showHlbMarkings = true,
+    this.showHlbLines = true,
     this.walkPath = const [],
     this.showWalkPath = true,
     this.showBasemap = true,
+    this.transparentBackground = false,
     this.mapType = gmaps.MapType.hybrid,
     this.navigationDestination,
     this.navigationOrigin,
@@ -43,9 +47,12 @@ class MissionMapCanvas extends StatelessWidget {
     this.fitToken = 0,
     this.followUserLocation = true,
     this.lockCameraGestures = false,
+    this.lockRotateGestures = false,
     this.onRouteLoaded,
     this.onMapLongPress,
     this.onMapTap,
+    this.onCameraTargetChanged,
+    this.onMapCenterReaderReady,
     this.fineTuningLandmarkId,
     this.fineTuningLandmarkPosition,
     this.onLandmarkDrag,
@@ -72,10 +79,14 @@ class MissionMapCanvas extends StatelessWidget {
   final List<MissionHlbLandmarkPin> hlbLandmarks;
   final List<MissionMapLineFeature> hlbLineFeatures;
   final List<gmaps.LatLng> lineDraftPoints;
+  final gmaps.LatLng? lineDraftCursor;
+  final String? lineDraftSegmentType;
   final bool showHlbMarkings;
+  final bool showHlbLines;
   final List<GpsPoint> walkPath;
   final bool showWalkPath;
   final bool showBasemap;
+  final bool transparentBackground;
   final gmaps.MapType mapType;
   final gmaps.LatLng? navigationDestination;
   final gmaps.LatLng? navigationOrigin;
@@ -83,9 +94,12 @@ class MissionMapCanvas extends StatelessWidget {
   final int fitToken;
   final bool followUserLocation;
   final bool lockCameraGestures;
+  final bool lockRotateGestures;
   final ValueChanged<DirectionsRoute?>? onRouteLoaded;
   final void Function(gmaps.LatLng position)? onMapLongPress;
   final void Function(gmaps.LatLng position)? onMapTap;
+  final void Function(gmaps.LatLng position)? onCameraTargetChanged;
+  final void Function(Future<gmaps.LatLng> Function() readCenter)? onMapCenterReaderReady;
   final String? fineTuningLandmarkId;
   final gmaps.LatLng? fineTuningLandmarkPosition;
   final void Function(String landmarkId, gmaps.LatLng position)? onLandmarkDrag;
@@ -113,10 +127,14 @@ class MissionMapCanvas extends StatelessWidget {
         hlbLandmarks: hlbLandmarks,
         hlbLineFeatures: hlbLineFeatures,
         lineDraftPoints: lineDraftPoints,
+        lineDraftCursor: lineDraftCursor,
+        lineDraftSegmentType: lineDraftSegmentType,
         showHlbMarkings: showHlbMarkings,
+        showHlbLines: showHlbLines,
         walkPath: walkPath,
         showWalkPath: showWalkPath,
         showBasemap: showBasemap,
+        transparentBackground: transparentBackground,
         mapType: mapType,
         navigationDestination: navigationDestination,
         navigationOrigin: navigationOrigin ??
@@ -128,9 +146,12 @@ class MissionMapCanvas extends StatelessWidget {
             : null,
         followUserLocation: followUserLocation,
         lockCameraGestures: lockCameraGestures,
+        lockRotateGestures: lockRotateGestures,
         onRouteLoaded: onRouteLoaded,
         onMapLongPress: onMapLongPress,
         onMapTap: onMapTap,
+        onCameraTargetChanged: onCameraTargetChanged,
+        onMapCenterReaderReady: onMapCenterReaderReady,
         fineTuningLandmarkId: fineTuningLandmarkId,
         fineTuningLandmarkPosition: fineTuningLandmarkPosition,
         onLandmarkDrag: onLandmarkDrag,

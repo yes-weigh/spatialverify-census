@@ -26,7 +26,7 @@ class _FineTuneDragSession {
   final int? edgeIndex;
 }
 
-/// Satellite map with PDF overlay resize (corners) and rotate (edges) handles.
+/// Satellite map with PDF overlay uniform scale (corners) and rotate (edges) handles.
 class PdfOverlayFineTuneMap extends StatefulWidget {
   const PdfOverlayFineTuneMap({
     required this.boundary,
@@ -199,7 +199,7 @@ class _PdfOverlayFineTuneMapState extends State<PdfOverlayFineTuneMap> {
       draggable: true,
       zIndexInt: 3,
       icon: gmaps.BitmapDescriptor.defaultMarkerWithHue(gmaps.BitmapDescriptor.hueOrange),
-      infoWindow: gmaps.InfoWindow(title: 'Resize corner ${i + 1}'),
+      infoWindow: gmaps.InfoWindow(title: 'Scale corner ${i + 1}'),
       onDragStart: (pos) => _beginDrag(
         kind: _FineTuneHandleKind.corner,
         finger: LatLng(pos.latitude, pos.longitude),

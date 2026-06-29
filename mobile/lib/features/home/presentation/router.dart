@@ -101,6 +101,14 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
           GoRoute(
+            path: '/mission/:projectId/eb/:ebId/fine-tune-pdf',
+            builder: (context, state) => LayoutGeorefWizardScreen(
+              projectId: state.pathParameters['projectId']!,
+              ebId: state.pathParameters['ebId']!,
+              openFineTune: true,
+            ),
+          ),
+          GoRoute(
             path: '/mission/:projectId/eb/:ebId/start-point',
             builder: (context, state) => StartPointScreen(
               projectId: state.pathParameters['projectId']!,

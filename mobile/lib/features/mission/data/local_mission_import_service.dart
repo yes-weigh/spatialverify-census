@@ -24,6 +24,9 @@ import 'layout_georef_math.dart';
 import 'map_panel_ocr_service.dart';
 import 'mission_cv_worker.dart';
 import 'mission_seed_location_resolver.dart';
+import 'hlo_layout_sheet_measure.dart';
+import '../models/hlo_layout_sheet_insets.dart';
+import '../models/hlo_map_panel_rect.dart';
 import 'satellite_align_math.dart';
 
 /// Cached CV + OCR/Places prep between upload and landmark verification.
@@ -282,6 +285,38 @@ class LocalMissionImportService {
     );
   }
 
+  /// Clears boundary/overlay from a prior import before replacing [layout.png].
+  Future<void> beginReimport(String ebId) async {
+    final state = await _cache.get(ebId);
+    if (state == null) return;
+
+    final lg = state.layoutGeoref != null
+        ? Map<String, dynamic>.from(state.layoutGeoref!)
+        : <String, dynamic>{};
+    for (final key in [
+      'gpsBoundary',
+      'boundaryPolygon',
+      'polygonAreaSqMeters',
+      'imageBounds',
+      'uvRing',
+      'missionIntelligence',
+      'status',
+      'finalizedAt',
+      'sourcePageSizePt',
+      'sourceLayoutInsets',
+      'sourceMapPanelRect',
+      'sourceFullSheetPath',
+    ]) {
+      lg.remove(key);
+    }
+
+    await _cache.put(state.copyWith(
+      clearOfficialBoundary: true,
+      clearMissionIntelligence: true,
+      layoutGeoref: lg.isEmpty ? null : lg,
+    ));
+  }
+
   /// Rasterize PDF/image only — show map immediately for manual georef.
   Future<ManualUploadDraft> prepareManualUpload({
     required String ebId,
@@ -291,13 +326,24 @@ class LocalMissionImportService {
     required double userLat,
     required double userLng,
   }) async {
+    await beginReimport(ebId);
     await Future<void>.delayed(Duration.zero);
     final source = await _readMapSource(mapFile: mapFile, mapBytes: mapBytes, mapFileName: mapFileName);
-    final rendered = await _renderMapBytes(source.bytes, source.name);
+    final isPdf = source.name.toLowerCase().endsWith('.pdf');
+    final fullPageBytes = isPdf ? await renderHloPdfPagePng(source.bytes) : source.bytes;
+    final pageSize = isPdf ? await readHloPdfPageSizePt(source.bytes) : null;
+    final sheetInsets = measureHloLayoutSheetInsets(fullPageBytes);
+    final mapPanelRect = measureMapPanelRect(fullPageBytes);
+    final fullSheetPath = await saveMissionFullSheetBytes(ebId, fullPageBytes);
+    final rendered = prepareLayoutMapImageBytes(fullPageBytes);
     final layoutPath = await saveMissionLayoutBytes(ebId, rendered);
-    final metadata = source.name.toLowerCase().endsWith('.pdf')
-        ? HloPdfMetadataParser.parseBytes(source.bytes)
-        : null;
+    if (pageSize != null) {
+      await saveSourcePageSize(ebId, pageSize);
+    }
+    await saveSourceLayoutInsets(ebId, sheetInsets);
+    await saveSourceMapPanelRect(ebId, mapPanelRect);
+    await saveSourceFullSheetPath(ebId, fullSheetPath);
+    final metadata = isPdf ? HloPdfMetadataParser.parseBytes(source.bytes) : null;
     final seed = await MissionSeedLocationResolver().resolve(
       metadata: metadata,
       userLat: userLat,
@@ -309,7 +355,52 @@ class LocalMissionImportService {
       mapFilePath: source.name,
       seed: seed,
       metadata: metadata,
+      pageSize: pageSize,
     );
+  }
+
+  Future<void> saveSourceLayoutInsets(String ebId, HloLayoutSheetInsets insets) async {
+    final state = await _cache.get(ebId);
+    if (state == null) return;
+    await _cache.put(state.copyWith(
+      layoutGeoref: {
+        ...?state.layoutGeoref,
+        'sourceLayoutInsets': insets.toJson(),
+      },
+    ));
+  }
+
+  Future<void> saveSourceMapPanelRect(String ebId, HloMapPanelRect rect) async {
+    final state = await _cache.get(ebId);
+    if (state == null) return;
+    await _cache.put(state.copyWith(
+      layoutGeoref: {
+        ...?state.layoutGeoref,
+        'sourceMapPanelRect': rect.toJson(),
+      },
+    ));
+  }
+
+  Future<void> saveSourceFullSheetPath(String ebId, String path) async {
+    final state = await _cache.get(ebId);
+    if (state == null) return;
+    await _cache.put(state.copyWith(
+      layoutGeoref: {
+        ...?state.layoutGeoref,
+        'sourceFullSheetPath': path,
+      },
+    ));
+  }
+
+  Future<void> saveSourcePageSize(String ebId, HloPdfPageSize pageSize) async {
+    final state = await _cache.get(ebId);
+    if (state == null) return;
+    await _cache.put(state.copyWith(
+      layoutGeoref: {
+        ...?state.layoutGeoref,
+        'sourcePageSizePt': pageSize.toJson(),
+      },
+    ));
   }
 
   /// Trace the thick white HLB border on demand.
@@ -478,13 +569,11 @@ class LocalMissionImportService {
     throw Exception('No map file provided');
   }
 
+  /// Map panel only (no legend sidebar or page margins) for satellite ground overlay.
   Future<Uint8List> _renderMapBytes(Uint8List data, String name) async {
     final lower = name.toLowerCase();
-    if (lower.endsWith('.pdf')) {
-      final png = await renderHloPdfPagePng(data);
-      return prepareLayoutMapImageBytes(png);
-    }
-    return prepareLayoutMapImageBytes(data);
+    final sourceBytes = lower.endsWith('.pdf') ? await renderHloPdfPagePng(data) : data;
+    return prepareLayoutMapImageBytes(sourceBytes);
   }
 
   Future<void> saveImageBounds(String ebId, ImageBounds bounds) async {
@@ -614,6 +703,10 @@ class LocalMissionImportService {
       importedAt: DateTime.now(),
     );
 
+    final intel = MissionIntelligencePackage.fromJson(intelligence);
+    final boundaryMeta = intelligence['boundary'] as Map<String, dynamic>? ?? {};
+    final closedRing = [...gpsBoundary.map((p) => [p.lng, p.lat]), [gpsBoundary.first.lng, gpsBoundary.first.lat]];
+
     await _cache.put(state.copyWith(
       phase: 'mapping',
       blockStatus: 'published',
@@ -623,6 +716,12 @@ class LocalMissionImportService {
         ...?state.layoutGeoref,
         'missionIntelligence': intelligence,
         'gpsBoundary': gpsBoundary.map((p) => p.toJson()).toList(),
+        'boundaryPolygon': {'type': 'Polygon', 'coordinates': [closedRing]},
+        'polygonAreaSqMeters': area,
+        'imageBounds': intel.imageBounds.toJson(),
+        if (boundaryMeta['uvRing'] != null) 'uvRing': boundaryMeta['uvRing'],
+        if (intelligence['layoutImagePath'] != null)
+          'layoutImagePath': intelligence['layoutImagePath'],
         'status': 'finalized',
         'finalizedAt': DateTime.now().toIso8601String(),
       },

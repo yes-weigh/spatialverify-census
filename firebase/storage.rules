@@ -14,9 +14,9 @@ service firebase.storage {
       allow read, write: if isOwner(userId);
     }
 
-    // Signed-in field apps download OTA APK builds published by CI.
+    // OTA APK builds published by CI (public read for hosting download page).
     match /app-releases/android/{fileName} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if false;
     }
   }

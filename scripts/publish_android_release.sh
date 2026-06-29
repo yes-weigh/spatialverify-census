@@ -14,6 +14,37 @@ if [[ -z "${FIREBASE_TOKEN:-}" ]]; then
   exit 1
 fi
 
+# firebase login:ci stores a refresh token. Exchange it for an OAuth access token so
+# we can call Google APIs. Firebase Storage REST (firebasestorage.googleapis.com)
+# enforces security rules — app-releases/android has allow write: if false — so CI
+# uploads via the GCS JSON API, which uses project IAM instead.
+ACCESS_TOKEN="$(python3 - <<'PY'
+import json, os, sys, urllib.error, urllib.parse, urllib.request
+
+data = urllib.parse.urlencode({
+    "grant_type": "refresh_token",
+    "client_id": "563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com",
+    "client_secret": "j9pD0uKhRVXXIWPkME5Gvejd",
+    "refresh_token": os.environ["FIREBASE_TOKEN"],
+}).encode()
+req = urllib.request.Request(
+    "https://oauth2.googleapis.com/token",
+    data=data,
+    method="POST",
+    headers={"Content-Type": "application/x-www-form-urlencoded"},
+)
+try:
+    with urllib.request.urlopen(req) as resp:
+        body = json.load(resp)
+except urllib.error.HTTPError as exc:
+    detail = exc.read().decode("utf-8", errors="replace")
+    print(f"Failed to exchange FIREBASE_TOKEN for access token: {detail}", file=sys.stderr)
+    print("Re-run: firebase login:ci && gh secret set FIREBASE_TOKEN", file=sys.stderr)
+    raise SystemExit(1) from exc
+print(body["access_token"])
+PY
+)"
+
 PROJECT_ID="${FIREBASE_PROJECT_ID:-spatialverify-census}"
 STORAGE_BUCKET="${FIREBASE_STORAGE_BUCKET:-spatialverify-census.firebasestorage.app}"
 PUBSPEC="${PUBSPEC_PATH:-mobile/pubspec.yaml}"
@@ -48,16 +79,16 @@ ENCODED_PATH="$(python3 -c "import urllib.parse; print(urllib.parse.quote('${APK
 
 echo "Uploading ${APK_PATH} -> gs://${STORAGE_BUCKET}/${APK_STORAGE_PATH}"
 curl -fsS -X POST \
-  -H "Authorization: Bearer ${FIREBASE_TOKEN}" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -H "Content-Type: application/vnd.android.package-archive" \
   --data-binary @"${APK_PATH}" \
-  "https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o?name=${ENCODED_PATH}"
+  "https://storage.googleapis.com/upload/storage/v1/b/${STORAGE_BUCKET}/o?uploadType=media&name=${ENCODED_PATH}"
 
 PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 echo "Updating Firestore system/android_release"
 curl -fsS -X PATCH \
-  -H "Authorization: Bearer ${FIREBASE_TOKEN}" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -H "Content-Type: application/json" \
   "https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/system/android_release?updateMask.fieldPaths=versionName&updateMask.fieldPaths=buildNumber&updateMask.fieldPaths=apkStoragePath&updateMask.fieldPaths=releaseNotes&updateMask.fieldPaths=mandatory&updateMask.fieldPaths=publishedAt&updateMask.fieldPaths=gitSha" \
   -d @- <<EOF

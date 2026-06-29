@@ -6,13 +6,19 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/config/app_config.dart';
+import '../../../core/l10n/app_locale_provider.dart';
+import '../../../core/l10n/app_strings.dart';
 import '../../../core/maps/google_directions_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/hlb_geo_engine.dart';
+import '../data/hlb_official_catalog.dart';
+import '../data/hlb_map_pdf_exporter.dart';
+import '../widgets/hlb_template_sheet_preview.dart';
 import '../data/mission_map_session.dart';
 import '../widgets/bearing_arrow.dart';
-import '../widgets/hlb_map_painter.dart';
 import '../widgets/mission_hlb_mark_sheet.dart';
+import '../widgets/mission_line_feature_history.dart';
+import '../widgets/mission_hlb_form_sheet_backdrop.dart';
 import '../widgets/mission_map_canvas.dart';
 import '../widgets/mission_map_game_hud.dart';
 import '../widgets/mission_navigation_banner.dart';
@@ -52,6 +58,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
   var _showRoute = false;
   var _showStartMarker = false;
   var _showDraftBuildings = true;
+  var _showHlbLines = true;
   var _showWalkPath = true;
   var _showBasemap = true;
   var _pdfOpacity = 0.45;
@@ -62,7 +69,11 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
   gmaps.LatLng? _fineTuneOriginal;
 
   var _lineDrawMode = false;
+  var _placeTool = MapPlaceTool.building;
+  String? _lineDraftSegmentType;
+  gmaps.LatLng? _aimCursor;
   final List<gmaps.LatLng> _lineDraftPoints = [];
+  Future<gmaps.LatLng> Function()? _readMapCenter;
 
   EbMissionQuery get _query => EbMissionQuery(ebId: widget.ebId, projectId: widget.projectId);
 
@@ -84,6 +95,20 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
       },
       onBreadcrumb: (_) {},
     );
+    await _reloadSession();
+  }
+
+  Future<void> _openGeorefWizard() async {
+    await context.push('/mission/${widget.projectId}/eb/${widget.ebId}/georef');
+    if (!mounted) return;
+    ref.invalidate(discoveryStatusProvider(_query));
+    await _reloadSession();
+  }
+
+  Future<void> _openFineTunePdf() async {
+    await context.push('/mission/${widget.projectId}/eb/${widget.ebId}/fine-tune-pdf');
+    if (!mounted) return;
+    ref.invalidate(discoveryStatusProvider(_query));
     await _reloadSession();
   }
 
@@ -127,31 +152,33 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
   }
 
   String _phaseLabel(DiscoveryStatus d) {
+    final s = ref.watch(appStringsProvider);
     if (_fineTuningLandmark != null) {
-      return 'Drag feature · long-press symbol to fine-tune';
+      return s.fineTuneLandmarkHint;
     }
-    if (!d.hasOfficialBoundary) return 'Import HLO PDF to place your block on the map';
-    if (d.buildingsDiscovered == 0) {
-      return 'Mark buildings with □ △ ▨ — tap Add building or long-press map';
+    if (!d.hasOfficialBoundary) return s.importBoundaryHint;
+    if (_lineDrawMode) {
+      return s.traceRoadHint;
     }
-    return '${d.buildingsDiscovered} buildings · ${d.pathWalkedLabel}';
+    return s.crosshairHint;
   }
 
   ({String label, IconData icon, Color color, VoidCallback onTap}) _primaryAction(
     DiscoveryStatus d, {
     required BuildContext context,
   }) {
+    final s = ref.watch(appStringsProvider);
     if (!d.hasOfficialBoundary) {
       return (
-        label: 'Import HLO PDF',
+        label: s.importHloPdf,
         icon: Icons.upload_file_outlined,
         color: const Color(0xFF00897B),
-        onTap: () => context.push('/mission/${widget.projectId}/eb/${widget.ebId}/georef'),
+        onTap: _openGeorefWizard,
       );
     }
     if (_navigateMode) {
       return (
-        label: 'Stop navigation',
+        label: s.stopNavigation,
         icon: Icons.close,
         color: const Color(0xFF546E7A),
         onTap: () => setState(() {
@@ -163,57 +190,53 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
       );
     }
     return (
-      label: 'Add building',
-      icon: Icons.home_work_outlined,
-      color: const Color(0xFF00E676),
-      onTap: () => _markBuildingAtGps(context, d),
+      label: s.importHloPdf,
+      icon: Icons.upload_file_outlined,
+      color: const Color(0xFF00897B),
+      onTap: _openGeorefWizard,
     );
+  }
+
+  Future<void> _downloadHlbMapPdf() async {
+    final s = ref.read(appStringsProvider);
+    try {
+      final map = await ref.read(draftMapProvider(_query).future);
+      final state = await ref.read(missionLocalFirstProvider).getRawState(widget.ebId);
+      await shareHlbMapPdfFromState(
+        map: map,
+        layoutGeoref: state?.layoutGeoref,
+        ebId: widget.ebId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${s.pdfExportFailed}: $e')),
+      );
+    }
   }
 
   void _openMoreMenu(BuildContext context, DiscoveryStatus d) {
     setState(() => _layersOpen = false);
+    final s = ref.read(appStringsProvider);
     showMissionMoreSheet(
       context,
       items: [
-        if (d.hasOfficialBoundary && d.boundarySource == 'layout_map')
-          MissionMoreSheetItem(
-            icon: Icons.pin_drop_outlined,
-            label: 'Redo map alignment',
-            onTap: () async {
-              await context.push('/mission/${widget.projectId}/eb/${widget.ebId}/realign');
-              if (!mounted) return;
-              await _reloadSession();
-              ref.invalidate(discoveryStatusProvider(_query));
-            },
-          ),
         if (d.hasOfficialBoundary)
           MissionMoreSheetItem(
-            icon: Icons.place_outlined,
-            label: 'Add map feature',
-            onTap: () => _markLandmarkAtGps(context, d),
+            icon: Icons.upload_file_outlined,
+            label: s.reimportHloPdf,
+            onTap: _openGeorefWizard,
           ),
-        if (d.hasOfficialBoundary)
+        if (d.hasOfficialBoundary && AppConfig.hasGoogleMaps)
           MissionMoreSheetItem(
-            icon: Icons.polyline_outlined,
-            label: 'Draw road / canal',
-            onTap: () => _startLineDraw(),
-          ),
-        if (d.hasOfficialBoundary)
-          MissionMoreSheetItem(
-            icon: Icons.text_fields_outlined,
-            label: 'Add map label',
-            onTap: () => _markAnnotationAtGps(context),
-          ),
-        if (d.hasOfficialBoundary)
-          MissionMoreSheetItem(
-            icon: Icons.link_outlined,
-            label: 'Adjacent HLB reference',
-            onTap: () => _markAdjacentHlbAtGps(context),
+            icon: Icons.tune,
+            label: s.fineTunePdfOverlay,
+            onTap: _openFineTunePdf,
           ),
         if (d.hasOfficialBoundary && _session?.startPoint != null)
           MissionMoreSheetItem(
             icon: Icons.navigation_outlined,
-            label: 'Navigate to NW corner',
+            label: s.navigateToNwCorner,
             onTap: () => setState(() {
               _navigateMode = true;
               _loadingRoute = AppConfig.hasGoogleMaps;
@@ -223,29 +246,52 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
           ),
         MissionMoreSheetItem(
           icon: Icons.map_outlined,
-          label: 'Draft map',
+          label: s.hlbLayoutMap,
           onTap: () => _showDraftSheet(context),
         ),
+        if (d.hasOfficialBoundary)
+          MissionMoreSheetItem(
+            icon: Icons.download_outlined,
+            label: s.downloadHlbMapPdf,
+            onTap: _downloadHlbMapPdf,
+          ),
         if (d.buildingsDiscovered > 0)
           MissionMoreSheetItem(
             icon: Icons.home_work_outlined,
-            label: 'House listing',
+            label: s.houseListing,
             onTap: () => context.push('/mission/${widget.projectId}/eb/${widget.ebId}/listing'),
           ),
         MissionMoreSheetItem(
           icon: Icons.dashboard_outlined,
-          label: 'Dashboard',
+          label: s.dashboard,
           onTap: () => context.push('/mission/${widget.projectId}/eb/${widget.ebId}/dashboard'),
         ),
         MissionMoreSheetItem(
           icon: Icons.history,
-          label: 'Walk replay',
+          label: s.walkReplay,
           onTap: () => context.push('/mission/${widget.projectId}/eb/${widget.ebId}/replay'),
         ),
         MissionMoreSheetItem(
           icon: Icons.warning_amber_outlined,
-          label: 'Coverage gaps',
+          label: s.coverageGaps,
           onTap: () => context.push('/mission/${widget.projectId}/eb/${widget.ebId}/gaps'),
+        ),
+        MissionMoreSheetItem(
+          icon: Icons.translate,
+          label: s.switchLanguageLabel,
+          onTap: () async {
+            final target = ref.read(appLanguageProvider).toggleTarget;
+            await ref.read(appLanguageProvider.notifier).setLanguage(target);
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(AppStrings(target).languageChangedSnack(target))),
+            );
+          },
+        ),
+        MissionMoreSheetItem(
+          icon: Icons.folder_outlined,
+          label: s.projects,
+          onTap: () => context.push('/projects'),
         ),
       ],
     );
@@ -281,12 +327,38 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
               const LatLng(20.59, 78.96);
           final start = session?.startPoint;
           final showNav = _navigateMode && start != null && d.hasOfficialBoundary;
-          final hudBottomReserved = (showNav ? 96.0 : 0) + 88.0;
+          final showAimCrosshair = d.hasOfficialBoundary && _fineTuningLandmark == null;
+          final showPlaceHud = showAimCrosshair && !_lineDrawMode && !_navigateMode;
+          final showLegacyBar = !showPlaceHud && !_lineDrawMode && _fineTuningLandmark == null;
+          final showFineTune = _fineTuningLandmark != null;
+          final navInset = showNav && AppConfig.hasGoogleMaps ? 72.0 : 0.0;
+          const edgePad = 16.0;
+          final bottomInset = navInset + edgePad;
+          final bottomHudHeight = _lineDrawMode
+              ? 148.0
+              : showFineTune
+                  ? 80.0
+                  : showPlaceHud
+                      ? 132.0
+                      : showLegacyBar
+                          ? 68.0
+                          : 0.0;
+          // Fit button sits above the layers panel; reserve bottom chrome for left-side HUDs.
+          final hudBottomReserved = bottomInset + bottomHudHeight;
           final primary = _primaryAction(d, context: context);
+          final showHlbFormSheet = !_showBasemap && !_showPdf && d.hasOfficialBoundary;
 
           return Stack(
             fit: StackFit.expand,
             children: [
+              if (showHlbFormSheet)
+                MissionHlbFormSheetBackdrop(
+                  query: _query,
+                  showBoundary: _showBoundary,
+                  showBuildings: _showDraftBuildings,
+                  showLineFeatures: _showHlbLines,
+                  showWalkPath: _showWalkPath,
+                ),
               MissionMapCanvas(
                 center: center,
                 boundary: boundary,
@@ -297,7 +369,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                 pdfBounds: session?.imageBounds,
                 pdfOpacity: _pdfOpacity,
                 showRegionPins: _showPins,
-                showBoundary: _showBoundary,
+                showBoundary: _showBoundary && !showHlbFormSheet,
                 showNavigationRoute: _showRoute && showNav,
                 showStartMarker: _showStartMarker && start != null,
                 draftPins: session?.draftPins ?? const [],
@@ -306,15 +378,29 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                 hlbLandmarks: session?.hlbLandmarks ?? const [],
                 hlbLineFeatures: session?.hlbLineFeatures ?? const [],
                 lineDraftPoints: _lineDrawMode ? _lineDraftPoints : const [],
-                showHlbMarkings: _showDraftBuildings,
+                lineDraftCursor: _lineDrawMode ? _aimCursor : null,
+                lineDraftSegmentType: _lineDraftSegmentType,
+                showHlbMarkings: _showDraftBuildings && !showHlbFormSheet,
+                showHlbLines: _showHlbLines && !showHlbFormSheet,
                 walkPath: session?.walkPath ?? const [],
-                showWalkPath: _showWalkPath,
+                showWalkPath: _showWalkPath && !showHlbFormSheet,
                 showBasemap: _showBasemap,
+                transparentBackground: showHlbFormSheet,
                 mapType: _basemap.googleType,
                 navigationDestination: showNav ? start : null,
                 navigationOrigin: pos != null ? gmaps.LatLng(pos.latitude, pos.longitude) : null,
                 fitToken: _fitToken,
-                followUserLocation: true,
+                followUserLocation: _navigateMode,
+                lockRotateGestures: false,
+                onCameraTargetChanged: showAimCrosshair
+                    ? (target) {
+                        if (_aimCursor?.latitude != target.latitude ||
+                            _aimCursor?.longitude != target.longitude) {
+                          setState(() => _aimCursor = target);
+                        }
+                      }
+                    : null,
+                onMapCenterReaderReady: (reader) => _readMapCenter = reader,
                 onRouteLoaded: (route) => setState(() {
                   _route = route;
                   _loadingRoute = false;
@@ -322,9 +408,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                 onMapLongPress: d.hasOfficialBoundary && _fineTuningLandmark == null && !_lineDrawMode
                     ? (latLng) => _onMapLongPress(context, d, latLng.latitude, latLng.longitude)
                     : null,
-                onMapTap: _lineDrawMode
-                    ? (latLng) => _onLineDrawTap(latLng.latitude, latLng.longitude)
-                    : null,
+                onMapTap: null,
                 fineTuningLandmarkId: _fineTuningLandmark?.id,
                 fineTuningLandmarkPosition: _fineTunePosition,
                 onLandmarkDrag: (id, pos) => setState(() => _fineTunePosition = pos),
@@ -342,7 +426,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                       Positioned(
                         top: 8,
                         left: 8,
-                        right: 96,
+                        right: missionMapRightHudGutter + 8,
                         child: completionAsync.maybeWhen(
                           data: (c) => MissionMapHudStatus(
                             title: d.ebCode == kDefaultEbCode ? 'My HLB' : 'HLB ${d.ebCode}',
@@ -363,11 +447,18 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
+                            MissionMapHudIconButton(
+                              icon: Icons.center_focus_strong,
+                              tooltip: 'Fit boundary',
+                              onPressed: () => setState(() => _fitToken++),
+                            ),
+                            const SizedBox(height: 8),
                             MissionMapLayersDrawer(
                               expanded: _layersOpen,
                               onToggle: () => setState(() => _layersOpen = !_layersOpen),
                               maxPanelHeight: missionMapHudMaxPanelHeight(
                                 context,
+                                topOffset: 104,
                                 bottomReserved: hudBottomReserved,
                               ),
                               showOfficialMap: _showPdf,
@@ -376,6 +467,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                               showRoute: _showRoute,
                               showStartMarker: _showStartMarker,
                               showDraftBuildings: _showDraftBuildings,
+                              showHlbLines: _showHlbLines,
                               showWalkPath: _showWalkPath,
                               showBasemap: _showBasemap,
                               officialMapOpacity: _pdfOpacity,
@@ -386,49 +478,71 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                               onRouteChanged: (v) => setState(() => _showRoute = v),
                               onStartMarkerChanged: (v) => setState(() => _showStartMarker = v),
                               onDraftBuildingsChanged: (v) => setState(() => _showDraftBuildings = v),
+                              onHlbLinesChanged: (v) => setState(() => _showHlbLines = v),
                               onWalkPathChanged: (v) => setState(() => _showWalkPath = v),
                               onBasemapVisibilityChanged: (v) => setState(() => _showBasemap = v),
                               onOpacityChanged: (v) => setState(() => _pdfOpacity = v),
                               onBasemapChanged: (v) => setState(() => _basemap = v),
                             ),
-                            const SizedBox(height: 8),
-                            MissionMapHudIconButton(
-                              icon: Icons.center_focus_strong,
-                              tooltip: 'Fit boundary',
-                              onPressed: () => setState(() => _fitToken++),
-                            ),
                           ],
                         ),
                       ),
-                      Positioned(
-                        left: 16,
-                        right: 16,
-                        bottom: showNav && AppConfig.hasGoogleMaps ? 104 : 16,
-                        child: _fineTuningLandmark != null
-                            ? MissionLandmarkFineTuneBar(
-                                landmarkName: _fineTuningLandmark!.name,
-                                onSave: () => _saveLandmarkFineTune(),
-                                onCancel: _cancelLandmarkFineTune,
-                              )
-                            : MissionMapBottomBar(
-                                primaryLabel: primary.label,
-                                primaryIcon: primary.icon,
-                                primaryColor: primary.color,
-                                onPrimary: primary.onTap,
-                                onMore: () => _openMoreMenu(context, d),
-                              ),
-                      ),
+                      if (showFineTune)
+                        Positioned(
+                          left: 16,
+                          right: 16,
+                          bottom: bottomInset,
+                          child: MissionLandmarkFineTuneBar(
+                            landmarkName: _fineTuningLandmark!.name,
+                            onSave: () => _saveLandmarkFineTune(),
+                            onCancel: _cancelLandmarkFineTune,
+                          ),
+                        ),
+                      if (showPlaceHud)
+                        Positioned(
+                          left: 12,
+                          right: 12,
+                          bottom: bottomInset,
+                          child: MissionMapPlaceHud(
+                            selected: _placeTool,
+                            onToolSelected: (tool) => _onPlaceToolSelected(context, tool),
+                            onPlace: () => _placeFromCrosshair(context, d),
+                            onMore: () => _openMoreMenu(context, d),
+                          ),
+                        ),
+                      if (showLegacyBar)
+                        Positioned(
+                          left: 16,
+                          right: 16,
+                          bottom: bottomInset,
+                          child: MissionMapBottomBar(
+                            primaryLabel: primary.label,
+                            primaryIcon: primary.icon,
+                            primaryColor: primary.color,
+                            onPrimary: primary.onTap,
+                            onMore: () => _openMoreMenu(context, d),
+                          ),
+                        ),
                     ],
                   ),
                 ),
               ),
+              if (showAimCrosshair)
+                const Positioned.fill(
+                  child: IgnorePointer(
+                    child: Center(child: MissionMapCrosshair()),
+                  ),
+                ),
               if (_lineDrawMode)
                 Positioned(
                   left: 12,
                   right: 12,
-                  bottom: showNav ? 96 : 88,
+                  bottom: bottomInset,
                   child: _LineDrawHud(
+                    segmentType: _lineDraftSegmentType ?? 'pucca_road',
                     pointCount: _lineDraftPoints.length,
+                    canAddPoint: true,
+                    onAddPoint: _addLineDrawPoint,
                     onUndo: _lineDraftPoints.isNotEmpty ? _undoLinePoint : null,
                     onFinish: _lineDraftPoints.length >= 2 ? () => _finishLineDraw(context) : null,
                     onCancel: _cancelLineDraw,
@@ -452,9 +566,59 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
     );
   }
 
-  void _startLineDraw() {
+  Future<gmaps.LatLng?> _readAimPoint() async {
+    if (_readMapCenter != null) {
+      try {
+        return await _readMapCenter!();
+      } catch (_) {}
+    }
+    return _aimCursor;
+  }
+
+  void _onPlaceToolSelected(BuildContext context, MapPlaceTool tool) {
+    if (tool == MapPlaceTool.line) {
+      _enterLineDrawMode();
+      return;
+    }
+    setState(() {
+      if (_lineDrawMode) {
+        _lineDrawMode = false;
+        _lineDraftSegmentType = null;
+        _lineDraftPoints.clear();
+      }
+      _placeTool = tool;
+    });
+  }
+
+  Future<void> _placeFromCrosshair(BuildContext context, DiscoveryStatus d) async {
+    if (_placeTool == MapPlaceTool.line) {
+      _enterLineDrawMode();
+      return;
+    }
+    final pt = await _readAimPoint();
+    if (pt == null) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Move the map — waiting for crosshair position')),
+      );
+      return;
+    }
+    if (!context.mounted) return;
+    switch (_placeTool) {
+      case MapPlaceTool.building:
+        await _markBuildingAt(context, d, pt.latitude, pt.longitude);
+      case MapPlaceTool.feature:
+        await _markLandmarkAt(context, d, pt.latitude, pt.longitude);
+      case MapPlaceTool.line:
+        break;
+    }
+  }
+
+  void _enterLineDrawMode() {
     setState(() {
       _lineDrawMode = true;
+      _placeTool = MapPlaceTool.line;
+      _lineDraftSegmentType ??= 'pucca_road';
       _lineDraftPoints.clear();
       _layersOpen = false;
       _fineTuningLandmark = null;
@@ -464,6 +628,8 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
   void _cancelLineDraw() {
     setState(() {
       _lineDrawMode = false;
+      _placeTool = MapPlaceTool.building;
+      _lineDraftSegmentType = null;
       _lineDraftPoints.clear();
     });
   }
@@ -473,42 +639,94 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
     setState(() => _lineDraftPoints.removeLast());
   }
 
-  void _onLineDrawTap(double lat, double lng) {
-    setState(() => _lineDraftPoints.add(gmaps.LatLng(lat, lng)));
+  Future<void> _addLineDrawPoint() async {
+    final center = await _readAimPoint();
+    if (center == null || !mounted) return;
+
+    if (_lineDraftPoints.isNotEmpty) {
+      final last = _lineDraftPoints.last;
+      final gap = HlbGeoEngine.haversineMeters(
+        last.latitude,
+        last.longitude,
+        center.latitude,
+        center.longitude,
+      );
+      if (gap < 2) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pan the map so the crosshair moves — points must be at least 2 m apart'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+    }
+
+    setState(() {
+      _lineDraftPoints.add(center);
+      _aimCursor = center;
+    });
+  }
+
+  List<gmaps.LatLng> _collapseLinePoints(List<gmaps.LatLng> points) {
+    if (points.length < 2) return points;
+    final out = <gmaps.LatLng>[points.first];
+    for (var i = 1; i < points.length; i++) {
+      final prev = out.last;
+      final next = points[i];
+      if (HlbGeoEngine.haversineMeters(prev.latitude, prev.longitude, next.latitude, next.longitude) >= 1) {
+        out.add(next);
+      }
+    }
+    return out;
   }
 
   Future<void> _finishLineDraw(BuildContext context) async {
-    if (_lineDraftPoints.length < 2) return;
+    final draft = _collapseLinePoints(List<gmaps.LatLng>.from(_lineDraftPoints));
+    if (draft.length < 2) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Add at least 2 different points along the road')),
+        );
+      }
+      return;
+    }
     if (!context.mounted) return;
 
     final result = await MissionHlbMarkSheet.showLineFeature(
       context,
-      pointCount: _lineDraftPoints.length,
+      pointCount: draft.length,
+      initialSegmentType: _lineDraftSegmentType,
     );
     if (result == null || !context.mounted) return;
 
     final local = ref.read(missionLocalFirstProvider);
     await local.confirmRoadSegment(
       widget.ebId,
-      _lineDraftPoints.map((p) => (lat: p.latitude, lng: p.longitude)).toList(),
+      draft.map((p) => (lat: p.latitude, lng: p.longitude)).toList(),
       segmentType: result.segmentType,
       name: result.name,
     );
     _cancelLineDraw();
+    if (!_showHlbLines) {
+      setState(() => _showHlbLines = true);
+    }
     await _reloadSession();
     ref.invalidate(discoveryStatusProvider(_query));
     ref.invalidate(draftMapProvider(_query));
+    if (!mounted) return;
+    setState(() => _fitToken++);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${HlbOfficialCatalog.lineFeatureLabel(result.segmentType)} saved ($draft.length points)')),
+    );
   }
 
   void _onMapLongPress(BuildContext context, DiscoveryStatus d, double lat, double lng) {
-    if (_showDraftBuildings) {
-      final hit = nearestHlbLandmark(_session?.hlbLandmarks ?? const [], lat, lng);
-      if (hit != null) {
-        _beginLandmarkFineTune(hit);
-        return;
-      }
+    if (!_showDraftBuildings) return;
+    final hit = nearestHlbLandmark(_session?.hlbLandmarks ?? const [], lat, lng);
+    if (hit != null) {
+      _beginLandmarkFineTune(hit);
     }
-    _markBuildingAt(context, d, lat, lng);
   }
 
   void _beginLandmarkFineTune(MissionHlbLandmarkPin landmark) {
@@ -583,18 +801,6 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
     return true;
   }
 
-  Future<void> _markBuildingAtGps(BuildContext context, DiscoveryStatus d) async {
-    final pos = position ?? widget.initialPosition;
-    if (pos == null) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Waiting for GPS — try again in a moment')),
-      );
-      return;
-    }
-    await _markBuildingAt(context, d, pos.latitude, pos.longitude);
-  }
-
   Future<void> _markBuildingAt(
     BuildContext context,
     DiscoveryStatus d,
@@ -610,7 +816,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
     final result = await MissionHlbMarkSheet.showBuilding(
       context,
       suggestedNumber: suggested,
-      locationHint: 'Long-press map to pick a different spot',
+      locationHint: 'Crosshair marks the spot — pan, zoom & rotate until it is right',
     );
     if (result == null || !context.mounted) return;
 
@@ -627,19 +833,19 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
     ref.invalidate(draftMapProvider(_query));
   }
 
-  Future<void> _markLandmarkAtGps(BuildContext context, DiscoveryStatus d) async {
-    final pos = position ?? widget.initialPosition;
-    if (pos == null) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Waiting for GPS — try again in a moment')),
-      );
-      return;
-    }
-    if (!await _confirmMarkLocation(pos.latitude, pos.longitude)) return;
+  Future<void> _markLandmarkAt(
+    BuildContext context,
+    DiscoveryStatus d,
+    double lat,
+    double lng,
+  ) async {
+    if (!await _confirmMarkLocation(lat, lng)) return;
     if (!context.mounted) return;
 
-    final result = await MissionHlbMarkSheet.showLandmark(context);
+    final result = await MissionHlbMarkSheet.showLandmark(
+      context,
+      locationHint: 'Temple, mosque, school, shop… — placed at crosshair',
+    );
     if (result == null || !context.mounted) return;
 
     final local = ref.read(missionLocalFirstProvider);
@@ -647,178 +853,178 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
       widget.ebId,
       name: result.name,
       landmarkType: result.landmarkType,
-      latitude: pos.latitude,
-      longitude: pos.longitude,
+      latitude: lat,
+      longitude: lng,
     );
     await _reloadSession();
     ref.invalidate(discoveryStatusProvider(_query));
     ref.invalidate(draftMapProvider(_query));
   }
 
-  Future<void> _markAnnotationAtGps(BuildContext context) async {
-    final pos = position ?? widget.initialPosition;
-    if (pos == null) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Waiting for GPS — try again in a moment')),
-      );
-      return;
-    }
-    await _markAnnotationAt(context, pos.latitude, pos.longitude);
-  }
-
-  Future<void> _markAdjacentHlbAtGps(BuildContext context) async {
-    final pos = position ?? widget.initialPosition;
-    if (pos == null) return;
-    if (!context.mounted) return;
-    final result = await MissionHlbMarkSheet.showMapAnnotation(
-      context,
-      initialType: 'adjacent_hlb',
-      initialText: 'HLB NO: ',
-    );
-    if (result == null || !context.mounted) return;
-    if (!await _confirmMarkLocation(pos.latitude, pos.longitude)) return;
-    final local = ref.read(missionLocalFirstProvider);
-    await local.addMapAnnotation(
-      widget.ebId,
-      text: result.text,
-      annotationType: result.annotationType,
-      latitude: pos.latitude,
-      longitude: pos.longitude,
-      rotationDegrees: result.rotationDegrees,
-    );
-    ref.invalidate(draftMapProvider(_query));
-  }
-
-  Future<void> _markAnnotationAt(BuildContext context, double lat, double lng) async {
-    if (!await _confirmMarkLocation(lat, lng)) return;
-    if (!context.mounted) return;
-    final result = await MissionHlbMarkSheet.showMapAnnotation(context);
-    if (result == null || !context.mounted) return;
-    final local = ref.read(missionLocalFirstProvider);
-    await local.addMapAnnotation(
-      widget.ebId,
-      text: result.text,
-      annotationType: result.annotationType,
-      latitude: lat,
-      longitude: lng,
-      rotationDegrees: result.rotationDegrees,
-    );
-    ref.invalidate(draftMapProvider(_query));
-  }
-
   void _showDraftSheet(BuildContext context) {
-    final mapAsync = ref.read(draftMapProvider(_query));
-    mapAsync.whenData((map) {
-      showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: const Color(0xFF14141E),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        builder: (ctx) => DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.55,
-          minChildSize: 0.35,
-          maxChildSize: 0.9,
-          builder: (_, scrollController) => ListView(
-            controller: scrollController,
-            padding: const EdgeInsets.all(16),
-            children: [
-              Row(
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF14141E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.55,
+        minChildSize: 0.35,
+        maxChildSize: 0.9,
+        builder: (_, scrollController) => Consumer(
+          builder: (context, ref, _) {
+            final mapAsync = ref.watch(draftMapProvider(_query));
+            final templateAsync = ref.watch(hlbExportTemplateProvider(_query));
+            return mapAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('$e')),
+              data: (map) => ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.all(16),
                 children: [
-                  const Text('Draft census map', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.open_in_full),
-                    tooltip: 'Full screen',
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      context.push('/mission/${widget.projectId}/eb/${widget.ebId}/draft-map');
-                    },
+                  Row(
+                    children: [
+                      const Text('HLB layout map', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.open_in_full),
+                        tooltip: 'Full screen',
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          context.push('/mission/${widget.projectId}/eb/${widget.ebId}/draft-map');
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  templateAsync.when(
+                    loading: () => const AspectRatio(
+                      aspectRatio: 4 / 3,
+                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                    ),
+                    error: (_, __) => const SizedBox.shrink(),
+                    data: (layout) => AspectRatio(
+                      aspectRatio: layout.pageSize.widthPt / layout.pageSize.heightPt,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white24),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: HlbTemplateSheetPreview(mapData: map, layout: layout),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '${map.buildings.length} buildings · ${map.landmarks.length} landmarks · ${map.lineFeatures.length} lines',
+                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                  ),
+                  const SizedBox(height: 16),
+                  MissionLineFeatureHistoryPanel(
+                    projectId: widget.projectId,
+                    ebId: widget.ebId,
+                    lines: map.lineFeatures,
+                    onChanged: () => _reloadSession(),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              AspectRatio(
-                aspectRatio: 4 / 3,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white24),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: CustomPaint(
-                      painter: HlbMapPainter(mapData: map),
-                      size: Size.infinite,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '${map.buildings.length} buildings · ${map.landmarks.length} landmarks · ${map.lineFeatures.length} lines',
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-              ),
-            ],
-          ),
+            );
+          },
         ),
-      );
-    });
+      ),
+    );
   }
 }
 
 class _LineDrawHud extends StatelessWidget {
   const _LineDrawHud({
+    required this.segmentType,
     required this.pointCount,
     required this.onCancel,
+    required this.onAddPoint,
+    this.canAddPoint = true,
     this.onUndo,
     this.onFinish,
   });
 
+  final String segmentType;
   final int pointCount;
+  final bool canAddPoint;
+  final VoidCallback onAddPoint;
   final VoidCallback? onUndo;
   final VoidCallback? onFinish;
   final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
+    final typeLabel = HlbOfficialCatalog.lineFeatureLabel(segmentType);
     return Material(
       borderRadius: BorderRadius.circular(14),
       color: Colors.black.withValues(alpha: 0.9),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Tap map to trace road, canal, or path · $pointCount point${pointCount == 1 ? '' : 's'}',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                TextButton(onPressed: onCancel, child: const Text('Cancel')),
-                if (onUndo != null) ...[
-                  const SizedBox(width: 4),
-                  TextButton(onPressed: onUndo, child: const Text('Undo')),
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Drawing: $typeLabel',
+                style: const TextStyle(color: Color(0xFF42A5F5), fontWeight: FontWeight.w800, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Pan · zoom · rotate · $pointCount point${pointCount == 1 ? '' : 's'}',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  TextButton(onPressed: onCancel, child: const Text('Cancel')),
+                  if (onUndo != null)
+                    TextButton(onPressed: onUndo, child: const Text('Undo')),
                 ],
-                const Spacer(),
-                ElevatedButton(
-                  onPressed: onFinish,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF42A5F5),
-                    foregroundColor: Colors.black,
-                    disabledBackgroundColor: Colors.white24,
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: canAddPoint ? onAddPoint : null,
+                      icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+                      label: const Text('Add point'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black,
+                        disabledBackgroundColor: Colors.white24,
+                        minimumSize: const Size(0, 44),
+                      ),
+                    ),
                   ),
-                  child: const Text('Finish line'),
-                ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: onFinish,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF42A5F5),
+                        foregroundColor: Colors.black,
+                        disabledBackgroundColor: Colors.white24,
+                        minimumSize: const Size(0, 44),
+                      ),
+                      child: const Text('Finish'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

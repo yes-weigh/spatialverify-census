@@ -15,9 +15,23 @@ Future<String> saveMissionLayoutBytes(String ebId, Uint8List bytes) async {
   return path;
 }
 
+Future<String> saveMissionFullSheetBytes(String ebId, Uint8List bytes) async {
+  final dir = await getApplicationDocumentsDirectory();
+  final missionDir = Directory(p.join(dir.path, 'missions', ebId));
+  await missionDir.create(recursive: true);
+  final path = p.join(missionDir.path, 'fullSheet.png');
+  await File(path).writeAsBytes(bytes);
+  return path;
+}
+
 Future<String?> defaultMissionLayoutRef(String ebId) async {
   final dir = await getApplicationDocumentsDirectory();
   return p.join(dir.path, 'missions', ebId, 'layout.png');
+}
+
+Future<String?> defaultMissionFullSheetRef(String ebId) async {
+  final dir = await getApplicationDocumentsDirectory();
+  return p.join(dir.path, 'missions', ebId, 'fullSheet.png');
 }
 
 Future<bool> missionLayoutExists(String ref) async {

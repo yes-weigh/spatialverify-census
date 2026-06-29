@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/app_config.dart';
 import 'core/database/database.dart';
 import 'core/firebase/firebase_bootstrap.dart';
+import 'core/l10n/app_language.dart';
+import 'core/l10n/app_locale_provider.dart';
 import 'core/providers/providers.dart';
 import 'core/storage/secure_storage.dart';
 import 'core/theme/app_theme.dart';
@@ -58,12 +61,20 @@ class SpatialVerifyApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    final language = ref.watch(appLanguageProvider);
 
     return AppUpdateScope(
       child: MaterialApp.router(
         title: AppConfig.appName,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
+        locale: language.locale,
+        supportedLocales: AppLanguage.supportedLocales,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
         routerConfig: router,
       ),
     );

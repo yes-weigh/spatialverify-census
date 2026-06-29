@@ -14,9 +14,20 @@ Future<String> saveMissionLayoutBytes(String ebId, Uint8List bytes) async {
   return '$missionLayoutUriPrefix$ebId/layout.png';
 }
 
+Future<String> saveMissionFullSheetBytes(String ebId, Uint8List bytes) async {
+  final box = await _layoutBox();
+  await box.put('$ebId/fullSheet.png', bytes);
+  return '$missionLayoutUriPrefix$ebId/fullSheet.png';
+}
+
 Future<String?> defaultMissionLayoutRef(String ebId) async {
   final box = await _layoutBox();
   return box.containsKey(_hiveKey(ebId)) ? '$missionLayoutUriPrefix$ebId/layout.png' : null;
+}
+
+Future<String?> defaultMissionFullSheetRef(String ebId) async {
+  final box = await _layoutBox();
+  return box.containsKey('$ebId/fullSheet.png') ? '$missionLayoutUriPrefix$ebId/fullSheet.png' : null;
 }
 
 Future<bool> missionLayoutExists(String ref) async {
@@ -27,9 +38,12 @@ Future<bool> missionLayoutExists(String ref) async {
 
 Future<Uint8List?> readMissionLayoutBytes(String ref) async {
   if (ref.startsWith(missionLayoutUriPrefix)) {
-    final ebId = ref.substring(missionLayoutUriPrefix.length).split('/').first;
+    final parts = ref.substring(missionLayoutUriPrefix.length).split('/');
+    final ebId = parts.first;
+    final fileName = parts.length > 1 ? parts.sublist(1).join('/') : 'layout.png';
     final box = await _layoutBox();
-    final data = box.get(_hiveKey(ebId));
+    final key = fileName == 'fullSheet.png' ? '$ebId/fullSheet.png' : _hiveKey(ebId);
+    final data = box.get(key);
     if (data is Uint8List) return data;
     if (data is List) return Uint8List.fromList(data.cast<int>());
     return null;

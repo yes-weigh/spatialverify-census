@@ -80,4 +80,10 @@ class SecureLocalStorage {
   Future<void> setOfflineMode(bool value) async {
     await _settingsBox?.put('offline_mode', value);
   }
+
+  String get appLocaleCode => _settingsBox?.get('app_locale', defaultValue: 'en') as String;
+
+  Future<void> setAppLocaleCode(String code) async {
+    await _settingsBox?.put('app_locale', code);
+  }
 }

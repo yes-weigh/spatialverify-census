@@ -412,6 +412,14 @@ class MissionLocalFirstService {
     await _save(state);
   }
 
+  Future<void> deleteRoadSegment(String ebId, String localId) async {
+    var state = await _load(ebId);
+    final next = state.roadSegments.where((s) => s.localId != localId).toList();
+    if (next.length == state.roadSegments.length) return;
+    state = state.copyWith(roadSegments: next);
+    await _save(state);
+  }
+
   Future<void> addMapAnnotation(
     String ebId, {
     required String text,

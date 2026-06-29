@@ -189,6 +189,28 @@ double missionMapHudMaxPanelHeight(
   return available.clamp(96, media.size.height * 0.62);
 }
 
+/// Right-edge column: layers toggle + panel (240) + margin. Bottom HUDs stay left of this.
+const double missionMapRightHudGutter = 256;
+
+/// Bottom chrome height so the layers panel stops above map footers.
+double missionMapBottomChromeHeight({
+  bool lineDrawMode = false,
+  bool showBottomBar = false,
+  bool showNavBanner = false,
+  bool showFineTuneBar = false,
+}) {
+  var height = 16.0;
+  if (showNavBanner) height += 72;
+  if (lineDrawMode) {
+    height += 148;
+  } else if (showFineTuneBar) {
+    height += 80;
+  } else if (showBottomBar) {
+    height += 68;
+  }
+  return height;
+}
+
 /// Semi-transparent HUD panel anchored to map corners.
 class MissionMapHudPanel extends StatelessWidget {
   const MissionMapHudPanel({
@@ -660,6 +682,7 @@ class MissionMapLayersDrawer extends StatelessWidget {
     required this.showRoute,
     required this.showStartMarker,
     required this.showDraftBuildings,
+    required this.showHlbLines,
     required this.showWalkPath,
     required this.showBasemap,
     required this.officialMapOpacity,
@@ -670,6 +693,7 @@ class MissionMapLayersDrawer extends StatelessWidget {
     required this.onRouteChanged,
     required this.onStartMarkerChanged,
     required this.onDraftBuildingsChanged,
+    required this.onHlbLinesChanged,
     required this.onWalkPathChanged,
     required this.onBasemapVisibilityChanged,
     required this.onOpacityChanged,
@@ -686,6 +710,7 @@ class MissionMapLayersDrawer extends StatelessWidget {
   final bool showRoute;
   final bool showStartMarker;
   final bool showDraftBuildings;
+  final bool showHlbLines;
   final bool showWalkPath;
   final bool showBasemap;
   final double officialMapOpacity;
@@ -696,6 +721,7 @@ class MissionMapLayersDrawer extends StatelessWidget {
   final ValueChanged<bool> onRouteChanged;
   final ValueChanged<bool> onStartMarkerChanged;
   final ValueChanged<bool> onDraftBuildingsChanged;
+  final ValueChanged<bool> onHlbLinesChanged;
   final ValueChanged<bool> onWalkPathChanged;
   final ValueChanged<bool> onBasemapVisibilityChanged;
   final ValueChanged<double> onOpacityChanged;
@@ -711,14 +737,86 @@ class MissionMapLayersDrawer extends StatelessWidget {
     );
   }
 
+  Widget _sectionHeader(String title, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: AppTheme.textSecondary),
+          const SizedBox(width: 6),
+          Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
   Widget _layerPanelContent() {
+    final hlbMapOn = showBoundary || showDraftBuildings || showHlbLines;
+
+    void setHlbMap(bool on) {
+      onBoundaryChanged(on);
+      onDraftBuildingsChanged(on);
+      onHlbLinesChanged(on);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('Map stack (bottom → top)', style: TextStyle(fontSize: 10, color: AppTheme.textSecondary)),
-        const SizedBox(height: 4),
-        _chip('1 · Google map', showBasemap, onBasemapVisibilityChanged),
+        _sectionHeader('HLB map', Icons.border_outer),
+        _chip('Show HLB map', hlbMapOn, setHlbMap),
+        if (hlbMapOn) ...[
+          const SizedBox(height: 4),
+          const Text(
+            'Boundary and field drawings on satellite',
+            style: TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 4),
+          _chip('Boundary', showBoundary, onBoundaryChanged),
+          _chip('Buildings & landmarks', showDraftBuildings, onDraftBuildingsChanged),
+          _chip('Roads & canals', showHlbLines, onHlbLinesChanged),
+          Theme(
+            data: ThemeData(dividerColor: Colors.white12),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              title: const Text('More HLB layers', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+              children: [
+                _chip('Walk path', showWalkPath, onWalkPathChanged),
+                _chip('Navigation route', showRoute, onRouteChanged),
+                _chip('Start point', showStartMarker, onStartMarkerChanged),
+                _chip('Region pins', showRegionPins, onRegionPinsChanged),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        _sectionHeader('HLO scan', Icons.picture_as_pdf_outlined),
+        _chip('Show map scan', showOfficialMap, onOfficialMapChanged),
+        if (showOfficialMap) ...[
+          const SizedBox(height: 4),
+          const Text(
+            'Map panel only — legend and title block are on HLB layout map',
+            style: TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Text('Opacity', style: TextStyle(fontSize: 10, color: AppTheme.textSecondary)),
+              Expanded(
+                child: Slider(
+                  value: officialMapOpacity,
+                  min: 0.05,
+                  max: 0.95,
+                  onChanged: onOpacityChanged,
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 12),
+        _sectionHeader('Google map', Icons.map_outlined),
+        _chip('Show Google map', showBasemap, onBasemapVisibilityChanged),
         if (showBasemap) ...[
           const SizedBox(height: 4),
           Wrap(
@@ -737,43 +835,6 @@ class MissionMapLayersDrawer extends StatelessWidget {
             ],
           ),
         ],
-        const SizedBox(height: 4),
-        _chip('2 · HLO PDF', showOfficialMap, onOfficialMapChanged),
-        if (showOfficialMap) ...[
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              const Text('PDF fade', style: TextStyle(fontSize: 10, color: AppTheme.textSecondary)),
-              Expanded(
-                child: Slider(
-                  value: officialMapOpacity,
-                  min: 0.05,
-                  max: 0.95,
-                  onChanged: onOpacityChanged,
-                ),
-              ),
-            ],
-          ),
-        ],
-        const SizedBox(height: 2),
-        _chip('3 · HLB map', showDraftBuildings, onDraftBuildingsChanged),
-        const SizedBox(height: 8),
-        const Text('Overlays', style: TextStyle(fontSize: 10, color: AppTheme.textSecondary)),
-        const SizedBox(height: 4),
-        _chip('Boundary', showBoundary, onBoundaryChanged),
-        Theme(
-          data: ThemeData(dividerColor: Colors.white12),
-          child: ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: EdgeInsets.zero,
-            title: const Text('More layers', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-            children: [
-              _chip('Walk path', showWalkPath, onWalkPathChanged),
-              _chip('Route', showRoute, onRouteChanged),
-              _chip('Start point', showStartMarker, onStartMarkerChanged),
-            ],
-          ),
-        ),
       ],
     );
   }
@@ -801,9 +862,9 @@ class MissionMapLayersDrawer extends StatelessWidget {
         if (expanded) ...[
           const SizedBox(height: 8),
           ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: 220, maxHeight: panelMaxHeight),
+            constraints: BoxConstraints(maxWidth: 240, maxHeight: panelMaxHeight),
             child: MissionMapHudPanel(
-              maxWidth: 220,
+              maxWidth: 240,
               padding: EdgeInsets.zero,
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(10),
@@ -952,7 +1013,7 @@ class MissionMapBottomBar extends StatelessWidget {
                       children: [
                         Icon(primaryIcon, size: 20, color: Colors.white),
                         const SizedBox(width: 8),
-                        Flexible(
+                        Expanded(
                           child: Text(
                             primaryLabel,
                             style: const TextStyle(
@@ -962,6 +1023,7 @@ class MissionMapBottomBar extends StatelessWidget {
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
                           ),
                         ),
                       ],
@@ -990,6 +1052,202 @@ class MissionMapBottomBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What the crosshair will place when the enumerator taps Place.
+enum MapPlaceTool { building, feature, line }
+
+/// Center-crosshair placement HUD — pan, zoom, rotate, then place.
+class MissionMapPlaceHud extends StatelessWidget {
+  const MissionMapPlaceHud({
+    required this.selected,
+    required this.onToolSelected,
+    required this.onPlace,
+    this.onMore,
+    super.key,
+  });
+
+  final MapPlaceTool selected;
+  final ValueChanged<MapPlaceTool> onToolSelected;
+  final VoidCallback onPlace;
+  final VoidCallback? onMore;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.92),
+      borderRadius: BorderRadius.circular(16),
+      elevation: 12,
+      shadowColor: Colors.black54,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Pan · zoom · rotate — crosshair marks the spot',
+              style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _toolChip(
+                    icon: Icons.home_work_outlined,
+                    label: 'Building',
+                    tool: MapPlaceTool.building,
+                    color: const Color(0xFF00E676),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _toolChip(
+                    icon: Icons.place_outlined,
+                    label: 'Feature',
+                    tool: MapPlaceTool.feature,
+                    color: Colors.orange,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _toolChip(
+                    icon: Icons.polyline_outlined,
+                    label: 'Road',
+                    tool: MapPlaceTool.line,
+                    color: const Color(0xFF42A5F5),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: onPlace,
+                    icon: const Icon(Icons.add_location_alt_outlined, size: 20),
+                    label: Text(
+                      selected == MapPlaceTool.building
+                          ? 'Place building'
+                          : selected == MapPlaceTool.feature
+                              ? 'Place feature'
+                              : 'Start road',
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: switch (selected) {
+                        MapPlaceTool.building => const Color(0xFF00E676),
+                        MapPlaceTool.feature => Colors.orange,
+                        MapPlaceTool.line => const Color(0xFF42A5F5),
+                      },
+                      foregroundColor: Colors.black,
+                      minimumSize: const Size(0, 48),
+                    ),
+                  ),
+                ),
+                if (onMore != null) ...[
+                  const SizedBox(width: 6),
+                  Material(
+                    color: Colors.white10,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      onTap: onMore,
+                      borderRadius: BorderRadius.circular(12),
+                      child: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Icon(Icons.more_horiz, color: Colors.white, size: 22),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _toolChip({
+    required IconData icon,
+    required String label,
+    required MapPlaceTool tool,
+    required Color color,
+  }) {
+    final active = selected == tool;
+    return Material(
+      color: active ? color.withValues(alpha: 0.22) : Colors.white.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () => onToolSelected(tool),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: active ? color : Colors.white12, width: active ? 2 : 1),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: active ? color : Colors.white54),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: active ? Colors.white : Colors.white54,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Map-center aim reticle (roads, buildings, landmarks).
+class MissionMapCrosshair extends StatelessWidget {
+  const MissionMapCrosshair({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(56, 56),
+      painter: _MissionMapCrosshairPainter(),
+    );
+  }
+}
+
+class _MissionMapCrosshairPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final ring = Paint()
+      ..color = const Color(0xFF42A5F5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    final line = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawCircle(center, 22, ring);
+    canvas.drawLine(Offset(center.dx, 4), Offset(center.dx, center.dy - 6), line);
+    canvas.drawLine(Offset(center.dx, center.dy + 6), Offset(center.dx, size.height - 4), line);
+    canvas.drawLine(Offset(4, center.dy), Offset(center.dx - 6, center.dy), line);
+    canvas.drawLine(Offset(center.dx + 6, center.dy), Offset(size.width - 4, center.dy), line);
+    canvas.drawCircle(center, 3, Paint()..color = const Color(0xFF42A5F5));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Bottom bar while fine-tuning a landmark position on the HLB map.

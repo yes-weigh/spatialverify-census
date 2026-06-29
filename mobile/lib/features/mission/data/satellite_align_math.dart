@@ -164,38 +164,67 @@ class SatelliteAlignMath {
     return (north: dNorth, east: dEast);
   }
 
-  static ({double north, double east}) _rotateLocal(
-    ({double north, double east}) v,
-    double degrees,
-  ) {
-    final rad = degrees * math.pi / 180;
-    final cosR = math.cos(rad);
-    final sinR = math.sin(rad);
-    return (
-      north: v.north * cosR - v.east * sinR,
-      east: v.north * sinR + v.east * cosR,
-    );
-  }
-
   static double bearingDegrees(LatLng from, LatLng to) {
     final local = _latLngToLocalM(from, to);
     return normalizeMapBearing(math.atan2(local.east, local.north) * 180 / math.pi);
   }
 
-  /// Resize overlay keeping the opposite corner fixed.
+  static double _distanceMeters(LatLng a, LatLng b) {
+    final dNorth = (b.latitude - a.latitude) * _mPerDegLat;
+    final mPerDegLng = _mPerDegLat * math.cos(a.latitude * math.pi / 180);
+    final dEast = (b.longitude - a.longitude) * mPerDegLng;
+    return math.sqrt(dNorth * dNorth + dEast * dEast);
+  }
+
+  static LatLng _pointFromAnchor(LatLng anchor, LatLng point, double scale) {
+    return LatLng(
+      anchor.latitude + (point.latitude - anchor.latitude) * scale,
+      anchor.longitude + (point.longitude - anchor.longitude) * scale,
+    );
+  }
+
+  /// Project [query] onto the ray from [anchor] through [through].
+  static LatLng _projectOntoRay(LatLng anchor, LatLng through, LatLng query) {
+    final dir = _latLngToLocalM(anchor, through);
+    final q = _latLngToLocalM(anchor, query);
+    final len2 = dir.north * dir.north + dir.east * dir.east;
+    if (len2 < 1e-4) return through;
+    final t = (q.north * dir.north + q.east * dir.east) / len2;
+    final mPerDegLng = _mPerDegLat * math.cos(anchor.latitude * math.pi / 180);
+    return LatLng(
+      anchor.latitude + (dir.north * t) / _mPerDegLat,
+      anchor.longitude + (dir.east * t) / mPerDegLng,
+    );
+  }
+
+  /// Uniform resize from a corner drag — opposite corner stays fixed, no stretch.
   static ImageBounds resizeFromCornerDrag(ImageBounds bounds, int cornerIndex, LatLng newCorner) {
     final oppIdx = (cornerIndex + 2) % 4;
     final opp = imageUvToLatLngRotated(_cornerUvs[oppIdx].$1, _cornerUvs[oppIdx].$2, bounds);
-    final center = LatLng(
-      (newCorner.latitude + opp.latitude) / 2,
-      (newCorner.longitude + opp.longitude) / 2,
+    final origCorner = imageUvToLatLngRotated(
+      _cornerUvs[cornerIndex].$1,
+      _cornerUvs[cornerIndex].$2,
+      bounds,
     );
-    final newLocal = _rotateLocal(_latLngToLocalM(center, newCorner), -bounds.rotation);
-    const minHalfM = 25.0;
-    final halfW = math.max(newLocal.east.abs(), minHalfM);
-    final halfH = math.max(newLocal.north.abs(), minHalfM);
-    final resized = boundsFromCenter(center.latitude, center.longitude, halfW * 2, halfH * 2);
-    return resized.copyWith(rotation: bounds.rotation);
+
+    final projected = _projectOntoRay(opp, origCorner, newCorner);
+    final origDist = _distanceMeters(opp, origCorner);
+    if (origDist < 1) return bounds;
+
+    final scale = (_distanceMeters(opp, projected) / origDist).clamp(0.05, 20.0);
+
+    final center = bounds.center;
+    final newCenter = _pointFromAnchor(opp, center, scale);
+    final halfLat = ((bounds.north - bounds.south) / 2) * scale;
+    final halfLng = ((bounds.east - bounds.west) / 2) * scale;
+
+    return ImageBounds(
+      north: newCenter.latitude + halfLat,
+      south: newCenter.latitude - halfLat,
+      east: newCenter.longitude + halfLng,
+      west: newCenter.longitude - halfLng,
+      rotation: bounds.rotation,
+    );
   }
 
   static const double fineTuneMoveDamp = 1.0;
@@ -232,7 +261,7 @@ class SatelliteAlignMath {
     return base.copyWith(rotation: normalizeMapBearing(base.rotation + delta));
   }
 
-  /// Resize from corner using finger delta since drag start (stable — always uses [base]).
+  /// Uniform resize from corner using finger delta since drag start (stable — always uses [base]).
   static ImageBounds fineTuneResizeCorner(
     ImageBounds base,
     int cornerIndex,

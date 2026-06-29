@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Tangent;
@@ -66,19 +65,11 @@ class _HloPdfGeorefEditorState extends State<HloPdfGeorefEditor> with SingleTick
   var _pinMode = false;
   int? _draggingPinNumber;
   int? _selectedPinNumber;
-  var _nudgeStepPixels = 5.0;
   var _searchFocused = false;
-  ImageCoordMapper? _layoutMapper;
-  Offset _moveStick = Offset.zero;
-  Offset _rotateStick = Offset.zero;
-  Timer? _stickTicker;
   late final AnimationController _boundaryRevealController;
   late final Animation<double> _boundaryReveal;
 
   static const _boundaryRevealDuration = Duration(milliseconds: 3000);
-  static const _panSpeed = 11.0;
-  static const _rotateSpeed = 0.028;
-  static const _pinStickSpeed = 0.22;
 
   @override
   void initState() {
@@ -103,7 +94,6 @@ class _HloPdfGeorefEditorState extends State<HloPdfGeorefEditor> with SingleTick
 
   @override
   void dispose() {
-    _stickTicker?.cancel();
     _boundaryRevealController.dispose();
     _transformController.removeListener(_onTransformChanged);
     _transformController.dispose();
@@ -118,64 +108,11 @@ class _HloPdfGeorefEditorState extends State<HloPdfGeorefEditor> with SingleTick
 
   bool get _boundaryRevealComplete => _boundaryReveal.value >= 1.0;
 
-  void _onMoveStickChanged(Offset stick) {
-    _moveStick = stick;
-    _syncStickTicker();
-  }
-
-  void _onRotateStickChanged(Offset stick) {
-    _rotateStick = stick;
-    _syncStickTicker();
-  }
-
-  void _syncStickTicker() {
-    if (_moveStick == Offset.zero && _rotateStick == Offset.zero) {
-      _stickTicker?.cancel();
-      _stickTicker = null;
-      return;
-    }
-    _stickTicker ??= Timer.periodic(const Duration(milliseconds: 16), (_) => _tickSticks());
-  }
-
-  void _tickSticks() {
-    if (!mounted) return;
-
-    if (_moveStick != Offset.zero) {
-      final pin = _selectedPin;
-      final mapper = _layoutMapper;
-      final pinMove = pin != null &&
-          mapper != null &&
-          !widget.retraceOnly &&
-          !_searchFocused &&
-          widget.pins.isNotEmpty;
-
-      if (pinMove) {
-        final r = mapper.displayRect;
-        if (r.width > 0 && r.height > 0) {
-          final du = _moveStick.dx * _pinStickSpeed * _nudgeStepPixels / r.width;
-          final dv = _moveStick.dy * _pinStickSpeed * _nudgeStepPixels / r.height;
-          widget.onPinUpdated(
-            pin.copyWith(
-              uvX: (pin.uvX + du).clamp(0.0, 1.0),
-              uvY: (pin.uvY + dv).clamp(0.0, 1.0),
-            ),
-          );
-        }
-      } else if (_draggingPinNumber == null && !_pinMode) {
-        final m = Matrix4.copy(_transformController.value);
-        m.translate(_moveStick.dx * _panSpeed, _moveStick.dy * _panSpeed);
-        _transformController.value = m;
-      }
-    }
-
-    if (_rotateStick != Offset.zero && _draggingPinNumber == null && !_pinMode) {
-      setState(() => _rotation += _rotateStick.dx * _rotateSpeed);
-    }
-  }
-
-  bool get _sticksEnabled => !_pinMode && !_searchFocused && _draggingPinNumber == null;
-
   void _onTransformChanged() => setState(() {});
+
+  void _rotateStep({bool reverse = false}) {
+    setState(() => _rotation += (reverse ? -1 : 1) * 0.06);
+  }
 
   @override
   void didUpdateWidget(HloPdfGeorefEditor oldWidget) {
@@ -301,7 +238,6 @@ class _HloPdfGeorefEditorState extends State<HloPdfGeorefEditor> with SingleTick
         final mapper = imageSize == null
             ? null
             : ImageCoordMapper(containerSize: containerSize, imageSize: imageSize);
-        _layoutMapper = mapper;
         final hasBoundary = widget.boundaryRing.length >= 3;
 
         return Stack(
@@ -312,7 +248,7 @@ class _HloPdfGeorefEditorState extends State<HloPdfGeorefEditor> with SingleTick
               transformationController: _transformController,
               minScale: 0.4,
               maxScale: 10,
-              panEnabled: false,
+              panEnabled: !_pinMode,
               scaleEnabled: !_pinMode,
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
@@ -361,17 +297,17 @@ class _HloPdfGeorefEditorState extends State<HloPdfGeorefEditor> with SingleTick
                     top: tip.dy - _kPinHeight,
                     child: GestureDetector(
                       onTap: () => setState(() => _selectedPinNumber = pin.number),
-                      onPanStart: hasBoundary
-                          ? (_) => setState(() {
-                                _draggingPinNumber = pin.number;
-                                _selectedPinNumber = pin.number;
-                              })
-                          : null,
-                      onPanUpdate: hasBoundary
-                          ? (details) => _movePin(pin, details.globalPosition, mapper, containerSize)
-                          : null,
-                      onPanEnd: hasBoundary ? (_) => setState(() => _draggingPinNumber = null) : null,
-                      onPanCancel: hasBoundary ? () => setState(() => _draggingPinNumber = null) : null,
+                      onPanStart: (_) => setState(() {
+                        _draggingPinNumber = pin.number;
+                        _selectedPinNumber = pin.number;
+                      }),
+                      onPanUpdate: (details) {
+                        if (_draggingPinNumber == pin.number) {
+                          _movePin(pin, details.globalPosition, mapper, containerSize);
+                        }
+                      },
+                      onPanEnd: (_) => setState(() => _draggingPinNumber = null),
+                      onPanCancel: () => setState(() => _draggingPinNumber = null),
                       child: _MapDropPin(
                         number: pin.number,
                         ready: pin.isReady,
@@ -408,12 +344,7 @@ class _HloPdfGeorefEditorState extends State<HloPdfGeorefEditor> with SingleTick
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final searchVisible = !widget.retraceOnly && selected != null;
     final bottomBarHeight = searchVisible ? 56.0 + bottomInset : bottomInset;
-    final stickBottom = bottomBarHeight + 12;
-    final pinSelected = selected != null && !widget.retraceOnly && widget.pins.isNotEmpty;
-    final moveLabel = pinSelected ? 'Pin ${selected.number}' : 'Move';
-    final moveLabelColor = pinSelected ? const Color(0xFF66BB6A) : const Color(0xFFEF5350);
-
-    if (widget.pins.isEmpty) _layoutMapper = null;
+    final bottomHint = bottomBarHeight + 12;
 
     return Stack(
       fit: StackFit.expand,
@@ -450,6 +381,18 @@ class _HloPdfGeorefEditorState extends State<HloPdfGeorefEditor> with SingleTick
                 _AddPinOrb(
                   active: _pinMode,
                   onPressed: () => setState(() => _pinMode = !_pinMode),
+                ),
+                const SizedBox(height: 8),
+                MissionMapHudIconButton(
+                  icon: Icons.rotate_right,
+                  tooltip: 'Rotate map',
+                  onPressed: _rotateStep,
+                ),
+                const SizedBox(height: 8),
+                MissionMapHudIconButton(
+                  icon: Icons.center_focus_strong,
+                  tooltip: 'Reset view',
+                  onPressed: _resetView,
                 ),
               ],
             ),
@@ -489,31 +432,18 @@ class _HloPdfGeorefEditorState extends State<HloPdfGeorefEditor> with SingleTick
           ),
         if (!_pinMode && !_searchFocused)
           Positioned(
-            left: 8,
-            bottom: stickBottom,
-            child: MissionMapVirtualJoystick(
-              enabled: _sticksEnabled,
-              label: moveLabel,
-              labelColor: moveLabelColor,
-              onCenterTap: pinSelected
-                  ? () => setState(() {
-                        final choices = MissionMapNudgePad.pixelStepChoices;
-                        final idx = choices.indexWhere((s) => (_nudgeStepPixels - s).abs() < 0.01);
-                        _nudgeStepPixels = choices[(idx + 1) % choices.length];
-                      })
-                  : _resetView,
-              onStickChanged: _onMoveStickChanged,
-            ),
-          ),
-        if (!_pinMode && !_searchFocused)
-          Positioned(
-            right: 8,
-            bottom: stickBottom,
-            child: MissionMapVirtualJoystick(
-              enabled: _sticksEnabled,
-              label: 'Rotate',
-              labelColor: const Color(0xFF66BB6A),
-              onStickChanged: _onRotateStickChanged,
+            left: 0,
+            right: 0,
+            bottom: bottomHint,
+            child: Center(
+              child: Text(
+                'Pinch to zoom · drag to pan',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ),
         if (searchVisible)
@@ -550,7 +480,7 @@ class _HloPdfGeorefEditorState extends State<HloPdfGeorefEditor> with SingleTick
           Positioned(
             left: 0,
             right: 0,
-            bottom: stickBottom + 118,
+            bottom: bottomHint + 118,
             child: Center(
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

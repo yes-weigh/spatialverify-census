@@ -21,18 +21,26 @@ void main() {
     expect(trimmed.height, 62);
   });
 
-  test('prepareLayoutMapImageBytes returns png bytes', () {
+  test('import render keeps full page (legend + margins visible on map)', () {
     final src = img.Image(width: 400, height: 200);
     img.fill(src, color: img.ColorRgb8(255, 255, 255));
+    // Left legend strip
+    for (var y = 0; y < 200; y++) {
+      for (var x = 0; x < 100; x++) {
+        src.setPixel(x, y, img.ColorRgb8(200, 200, 200));
+      }
+    }
+    // Map panel
     for (var y = 20; y < 180; y++) {
       for (var x = 120; x < 390; x++) {
         src.setPixel(x, y, img.ColorRgb8(70, 110, 55));
       }
     }
-    final out = prepareLayoutMapImageBytes(Uint8List.fromList(img.encodePng(src)));
-    final decoded = img.decodeImage(out);
-    expect(decoded, isNotNull);
-    expect(decoded!.width, lessThan(400));
+    final full = Uint8List.fromList(img.encodePng(src));
+    final cropped = prepareLayoutMapImageBytes(full);
+    final croppedImg = img.decodeImage(cropped)!;
+    expect(croppedImg.width, lessThan(src.width));
+    expect(full.length, greaterThan(cropped.length));
   });
 
   test('detectBoundary scans full width on panel-only images', () {

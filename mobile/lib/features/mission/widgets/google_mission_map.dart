@@ -36,10 +36,14 @@ class GoogleMissionMap extends StatefulWidget {
     this.hlbLandmarks = const [],
     this.hlbLineFeatures = const [],
     this.lineDraftPoints = const [],
+    this.lineDraftCursor,
+    this.lineDraftSegmentType,
     this.showHlbMarkings = true,
+    this.showHlbLines = true,
     this.walkPath = const [],
     this.showWalkPath = true,
     this.showBasemap = true,
+    this.transparentBackground = false,
     this.mapType = MapType.hybrid,
     this.navigationDestination,
     this.navigationOrigin,
@@ -48,9 +52,12 @@ class GoogleMissionMap extends StatefulWidget {
     this.userLocation,
     this.followUserLocation = true,
     this.lockCameraGestures = false,
+    this.lockRotateGestures = false,
     this.onRouteLoaded,
     this.onMapLongPress,
     this.onMapTap,
+    this.onCameraTargetChanged,
+    this.onMapCenterReaderReady,
     this.fineTuningLandmarkId,
     this.fineTuningLandmarkPosition,
     this.onLandmarkDrag,
@@ -76,10 +83,14 @@ class GoogleMissionMap extends StatefulWidget {
   final List<MissionHlbLandmarkPin> hlbLandmarks;
   final List<MissionMapLineFeature> hlbLineFeatures;
   final List<LatLng> lineDraftPoints;
+  final LatLng? lineDraftCursor;
+  final String? lineDraftSegmentType;
   final bool showHlbMarkings;
+  final bool showHlbLines;
   final List<GpsPoint> walkPath;
   final bool showWalkPath;
   final bool showBasemap;
+  final bool transparentBackground;
   final MapType mapType;
   final LatLng? navigationDestination;
   final LatLng? navigationOrigin;
@@ -88,9 +99,12 @@ class GoogleMissionMap extends StatefulWidget {
   final LatLng? userLocation;
   final bool followUserLocation;
   final bool lockCameraGestures;
+  final bool lockRotateGestures;
   final ValueChanged<DirectionsRoute?>? onRouteLoaded;
   final void Function(LatLng position)? onMapLongPress;
   final void Function(LatLng position)? onMapTap;
+  final ValueChanged<LatLng>? onCameraTargetChanged;
+  final void Function(Future<LatLng> Function() readCenter)? onMapCenterReaderReady;
   final String? fineTuningLandmarkId;
   final LatLng? fineTuningLandmarkPosition;
   final void Function(String landmarkId, LatLng position)? onLandmarkDrag;
@@ -111,6 +125,7 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
   LatLng? _lastRouteKey;
   int _lastFitToken = 0;
   bool _centeredOnUser = false;
+  LatLng? _lastCameraTarget;
   BitmapDescriptor? _userLocationIcon;
   final Map<String, BitmapDescriptor> _hlbBuildingIcons = {};
   final Map<String, BitmapDescriptor> _hlbLandmarkIcons = {};
@@ -166,7 +181,10 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
         oldWidget.hlbLandmarks != widget.hlbLandmarks ||
         oldWidget.hlbLineFeatures != widget.hlbLineFeatures ||
         oldWidget.lineDraftPoints != widget.lineDraftPoints ||
+        oldWidget.lineDraftCursor != widget.lineDraftCursor ||
+        oldWidget.lineDraftSegmentType != widget.lineDraftSegmentType ||
         oldWidget.showHlbMarkings != widget.showHlbMarkings ||
+        oldWidget.showHlbLines != widget.showHlbLines ||
         oldWidget.fineTuningLandmarkId != widget.fineTuningLandmarkId ||
         oldWidget.fineTuningLandmarkPosition != widget.fineTuningLandmarkPosition ||
         oldWidget.walkPath != widget.walkPath ||
@@ -195,6 +213,65 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
     } else {
       _tryCenterOnUser();
     }
+
+    if (widget.onCameraTargetChanged != null && oldWidget.onCameraTargetChanged == null) {
+      _reportCameraCenter();
+    }
+    if (widget.onMapCenterReaderReady != null &&
+        (oldWidget.onMapCenterReaderReady == null || widget.fitToken != oldWidget.fitToken)) {
+      widget.onMapCenterReaderReady!.call(_readMapCenter);
+    }
+  }
+
+  Future<LatLng> _readMapCenter() async {
+    final controller = _controller;
+    if (controller == null) {
+      return _lastCameraTarget ?? widget.userLocation ?? widget.center;
+    }
+    try {
+      final region = await controller.getVisibleRegion();
+      final center = LatLng(
+        (region.northeast.latitude + region.southwest.latitude) / 2,
+        (region.northeast.longitude + region.southwest.longitude) / 2,
+      );
+      _lastCameraTarget = center;
+      return center;
+    } catch (_) {
+      return _lastCameraTarget ?? widget.userLocation ?? widget.center;
+    }
+  }
+
+  Future<void> _reportCameraCenter() async {
+    final controller = _controller;
+    final callback = widget.onCameraTargetChanged;
+    if (callback == null) return;
+
+    if (_lastCameraTarget != null) {
+      callback(_lastCameraTarget!);
+      return;
+    }
+
+    if (controller == null) {
+      callback(widget.userLocation ?? widget.center);
+      return;
+    }
+
+    try {
+      final region = await controller.getVisibleRegion();
+      final center = LatLng(
+        (region.northeast.latitude + region.southwest.latitude) / 2,
+        (region.northeast.longitude + region.southwest.longitude) / 2,
+      );
+      _lastCameraTarget = center;
+      callback(center);
+    } catch (_) {
+      callback(widget.userLocation ?? widget.center);
+    }
+  }
+
+  void _onCameraMove(CameraPosition position) {
+    _lastCameraTarget = position.target;
+    widget.onCameraTargetChanged?.call(position.target);
   }
 
   void _tryCenterOnUser() {
@@ -330,7 +407,7 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
       ));
     }
 
-    if (widget.showHlbMarkings) {
+    if (widget.showHlbLines) {
       for (final seg in widget.hlbLineFeatures) {
         if (seg.points.length < 2) continue;
         final type = HlbOfficialCatalog.normalizeLineType(seg.segmentType);
@@ -338,29 +415,50 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
           polylineId: PolylineId('hlb_line_${seg.id}'),
           points: seg.points.map((p) => LatLng(p.lat, p.lng)).toList(),
           color: HlbFeaturePainter.lineFeatureColor(type),
-          width: type == 'river' || type == 'canal' ? 5 : type == 'pucca_road' ? 6 : 4,
+          width: type == 'river' || type == 'canal' ? 6 : type == 'pucca_road' ? 7 : 5,
           patterns: _linePatterns(type),
-          zIndex: 8,
+          zIndex: 12,
         ));
       }
     }
 
-    if (widget.lineDraftPoints.length >= 2) {
-      polylines.add(Polyline(
-        polylineId: const PolylineId('line_draft'),
-        points: widget.lineDraftPoints,
-        color: const Color(0xFFFFAB00),
-        width: 5,
-        patterns: [PatternItem.dash(10), PatternItem.gap(6)],
-        zIndex: 15,
-      ));
-    } else if (widget.lineDraftPoints.length == 1) {
-      markers.add(Marker(
-        markerId: const MarkerId('line_draft_start'),
-        position: widget.lineDraftPoints.first,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
-        zIndexInt: 15,
-      ));
+    if (widget.lineDraftPoints.isNotEmpty || widget.lineDraftCursor != null) {
+      final type = HlbOfficialCatalog.normalizeLineType(widget.lineDraftSegmentType ?? 'pucca_road');
+      final color = HlbFeaturePainter.lineFeatureColor(type);
+      final width = type == 'river' || type == 'canal' ? 5.0 : type == 'pucca_road' ? 6.0 : 4.0;
+
+      if (widget.lineDraftPoints.length >= 2) {
+        polylines.add(Polyline(
+          polylineId: const PolylineId('line_draft'),
+          points: widget.lineDraftPoints,
+          color: color,
+          width: width.round(),
+          patterns: _linePatterns(type),
+          zIndex: 15,
+        ));
+      }
+
+      if (widget.lineDraftPoints.isNotEmpty && widget.lineDraftCursor != null) {
+        polylines.add(Polyline(
+          polylineId: const PolylineId('line_draft_preview'),
+          points: [widget.lineDraftPoints.last, widget.lineDraftCursor!],
+          color: color.withValues(alpha: 0.55),
+          width: (width - 1).round().clamp(3, 8),
+          patterns: [PatternItem.dash(8), PatternItem.gap(6)],
+          zIndex: 16,
+        ));
+      }
+
+      for (var i = 0; i < widget.lineDraftPoints.length; i++) {
+        markers.add(Marker(
+          markerId: MarkerId('line_draft_v_$i'),
+          position: widget.lineDraftPoints[i],
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          anchor: const Offset(0.5, 0.5),
+          zIndexInt: 17,
+          infoWindow: InfoWindow(title: 'Point ${i + 1}'),
+        ));
+      }
     }
 
     if (widget.showNavigationRoute && _route != null && _route!.points.isNotEmpty) {
@@ -526,6 +624,11 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
     for (final b in widget.hlbBuildings) {
       points.add(LatLng(b.latitude, b.longitude));
     }
+    for (final line in widget.hlbLineFeatures) {
+      for (final p in line.points) {
+        points.add(LatLng(p.lat, p.lng));
+      }
+    }
 
     if (points.isEmpty) {
       final target = widget.userLocation ?? widget.center;
@@ -567,7 +670,7 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (!widget.showBasemap)
+        if (!widget.showBasemap && !widget.transparentBackground)
           const ColoredBox(color: MissionMapStyle.basemapOffBackground),
         GoogleMap(
           initialCameraPosition: CameraPosition(target: initial, zoom: 17),
@@ -579,19 +682,23 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
           zoomControlsEnabled: false,
           scrollGesturesEnabled: !widget.lockCameraGestures,
           zoomGesturesEnabled: !widget.lockCameraGestures,
-          rotateGesturesEnabled: !widget.lockCameraGestures,
+          rotateGesturesEnabled: !widget.lockCameraGestures && !widget.lockRotateGestures,
           tiltGesturesEnabled: false,
           polylines: _polylines,
           groundOverlays: _groundOverlays,
           markers: _markers,
           onLongPress: widget.onMapLongPress,
           onTap: widget.onMapTap,
+          onCameraMove: widget.onCameraTargetChanged == null ? null : _onCameraMove,
+          onCameraIdle: widget.onCameraTargetChanged == null ? null : _reportCameraCenter,
           onMapCreated: (c) async {
             _controller = c;
+            widget.onMapCenterReaderReady?.call(_readMapCenter);
             _tryCenterOnUser();
             if (!_centeredOnUser && !widget.followUserLocation) {
               await _fitCamera(fitContent: true);
             }
+            await _reportCameraCenter();
           },
         ),
         if (_loadingRoute)

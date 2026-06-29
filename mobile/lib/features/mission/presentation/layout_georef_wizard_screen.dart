@@ -57,12 +57,14 @@ class LayoutGeorefWizardScreen extends ConsumerStatefulWidget {
     required this.projectId,
     required this.ebId,
     this.restartAlignment = false,
+    this.openFineTune = false,
     super.key,
   });
 
   final String projectId;
   final String ebId;
   final bool restartAlignment;
+  final bool openFineTune;
 
   @override
   ConsumerState<LayoutGeorefWizardScreen> createState() => _LayoutGeorefWizardScreenState();
@@ -166,6 +168,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       showRoute: _showRouteLayer,
       showStartMarker: _showStartMarkerLayer,
       showDraftBuildings: false,
+      showHlbLines: false,
       showWalkPath: false,
       showBasemap: _showBasemap,
       officialMapOpacity: _opacity,
@@ -176,6 +179,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       onRouteChanged: (v) => setState(() => _showRouteLayer = v),
       onStartMarkerChanged: (v) => setState(() => _showStartMarkerLayer = v),
       onDraftBuildingsChanged: (_) {},
+      onHlbLinesChanged: (_) {},
       onWalkPathChanged: (_) {},
       onBasemapVisibilityChanged: (v) => setState(() => _showBasemap = v),
       onOpacityChanged: (v) => setState(() => _opacity = v),
@@ -222,7 +226,9 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       setState(() => _boundaryProgress = _boundaryController.value);
     });
     _initGps();
-    if (widget.restartAlignment) {
+    if (widget.openFineTune) {
+      _loadFineTuneSession();
+    } else if (widget.restartAlignment) {
       _loadAlignmentRestart();
     }
   }
@@ -316,6 +322,50 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
 
   void _exitAdjust() {
     setState(() => _phase = _WizardPhase.mapExperience);
+  }
+
+  Future<void> _loadFineTuneSession() async {
+    setState(() {
+      _loadingAlignmentRestart = true;
+      _error = null;
+    });
+
+    try {
+      final session = await _localImport.loadReorientSession(widget.ebId);
+      if (session == null) {
+        throw Exception('Import HLO PDF first');
+      }
+
+      final intel = session.intelligence;
+      if (intel.gpsBoundary.length < 3) {
+        throw Exception('Boundary not ready for fine tune');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _layoutImageUrl = session.layoutImagePath;
+        _intelligence = intel;
+        _imageBounds = intel.imageBounds;
+        _baseBounds = intel.imageBounds;
+        _fineTuneBounds = intel.imageBounds;
+        _mapCenter = MissionSatelliteMap.boundsCenter(intel.gpsBoundary);
+        _phase = _WizardPhase.fineTune;
+        _loadingAlignmentRestart = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      final message = e.toString().replaceFirst('Exception: ', '');
+      if (widget.openFineTune) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+        context.pop();
+        return;
+      }
+      setState(() {
+        _loadingAlignmentRestart = false;
+        _error = message;
+        _phase = _WizardPhase.upload;
+      });
+    }
   }
 
   Future<void> _loadAlignmentRestart() async {
@@ -1044,6 +1094,10 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
   }
 
   void _cancelFineTune() {
+    if (widget.openFineTune) {
+      context.pop();
+      return;
+    }
     setState(() {
       _phase = _WizardPhase.mapExperience;
       _fineTuneBounds = null;
@@ -1071,11 +1125,25 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       'gpsRing': newBoundary.map((p) => p.toJson()).toList(),
     };
 
-    final updatedIntel = MissionIntelligencePackage.fromJson(raw);
-
-    await _localImport.saveGpsBoundary(widget.ebId, newBoundary);
+    await _localImport.applyReorientedBoundary(
+      ebId: widget.ebId,
+      intelligence: raw,
+      gpsBoundary: newBoundary,
+      imageBounds: bounds,
+    );
 
     if (!mounted) return;
+
+    if (widget.openFineTune) {
+      ref.invalidate(discoveryStatusProvider(EbMissionQuery(ebId: widget.ebId, projectId: widget.projectId)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PDF overlay updated on satellite')),
+      );
+      context.pop();
+      return;
+    }
+
+    final updatedIntel = MissionIntelligencePackage.fromJson(raw);
     setState(() {
       _intelligence = updatedIntel;
       _imageBounds = bounds;
@@ -1131,7 +1199,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
               alignment: Alignment.topLeft,
               child: MissionMapHudStatus(
                 title: 'Fine tune PDF overlay',
-                subtitle: 'Drag a handle, release to apply · cyan moves · orange resizes · purple rotates',
+                subtitle: 'Drag a handle, release to apply · cyan moves · orange scales · purple rotates',
                 icon: Icons.tune,
               ),
             ),
@@ -1383,7 +1451,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
               ),
               const SizedBox(height: 6),
               const Text(
-                'Drag center to move, corner handles to resize, edge handles to rotate the PDF overlay.',
+                'Drag center to move, orange corners to scale uniformly, purple edges to rotate.',
                 style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
               ),
             ],
@@ -1820,6 +1888,11 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       _manualDraft = null;
       _boundaryRing = [];
       _pins = [];
+      _intelligence = null;
+      _imageBounds = null;
+      _baseBounds = null;
+      _pdfOverlayBase = null;
+      _pdfOverlayWorking = null;
     });
 
     setState(() {
@@ -1847,6 +1920,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
           await _local.savePdfMetadata(widget.ebId, manual.metadata!.toJson());
         }
         if (!mounted) return;
+        ref.invalidate(discoveryStatusProvider(EbMissionQuery(ebId: widget.ebId, projectId: widget.projectId)));
         setState(() {
           _manualDraft = manual;
           _layoutImageUrl = manual.layoutPath;

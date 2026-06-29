@@ -72,10 +72,27 @@ class MissionHlbMarkSheet {
   }) =>
       showLandmark(context, locationHint: locationHint);
 
+  /// Pick line type before tracing (crosshair draw mode).
+  static Future<HlbLineFeatureResult?> showLineDrawStart(BuildContext context) {
+    return showModalBottomSheet<HlbLineFeatureResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const _LineFeatureSheet(
+        pointCount: 0,
+        startMode: true,
+      ),
+    );
+  }
+
   /// Finish a traced polyline — road, canal, street, etc.
   static Future<HlbLineFeatureResult?> showLineFeature(
     BuildContext context, {
     required int pointCount,
+    String? initialSegmentType,
   }) {
     return showModalBottomSheet<HlbLineFeatureResult>(
       context: context,
@@ -84,7 +101,10 @@ class MissionHlbMarkSheet {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _LineFeatureSheet(pointCount: pointCount),
+      builder: (_) => _LineFeatureSheet(
+        pointCount: pointCount,
+        initialSegmentType: initialSegmentType,
+      ),
     );
   }
 
@@ -150,7 +170,7 @@ class _BuildingMarkSheetState extends State<_BuildingMarkSheet> {
           const SizedBox(height: 16),
           const Text('Add building', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
           Text(
-            widget.locationHint ?? 'Mark at your current location or long-press the map',
+            widget.locationHint ?? 'Crosshair marks the spot — pan, zoom & rotate first',
             style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 16),
@@ -258,7 +278,7 @@ class _LandmarkMarkSheetState extends State<_LandmarkMarkSheet> {
                 children: [
                   const Text('Add map feature', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
                   Text(
-                    widget.locationHint ?? 'Roads, places, open land — per layout map instructions',
+                    widget.locationHint ?? 'Temple, mosque, school, shop… — crosshair marks the spot',
                     style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
                   ),
                   const SizedBox(height: 12),
@@ -328,9 +348,15 @@ class _LandmarkMarkSheetState extends State<_LandmarkMarkSheet> {
 }
 
 class _LineFeatureSheet extends StatefulWidget {
-  const _LineFeatureSheet({required this.pointCount});
+  const _LineFeatureSheet({
+    required this.pointCount,
+    this.startMode = false,
+    this.initialSegmentType,
+  });
 
   final int pointCount;
+  final bool startMode;
+  final String? initialSegmentType;
 
   @override
   State<_LineFeatureSheet> createState() => _LineFeatureSheetState();
@@ -338,7 +364,7 @@ class _LineFeatureSheet extends StatefulWidget {
 
 class _LineFeatureSheetState extends State<_LineFeatureSheet> {
   final _nameCtrl = TextEditingController();
-  var _segmentType = 'pucca_road';
+  late var _segmentType = widget.initialSegmentType ?? 'pucca_road';
 
   @override
   void dispose() {
@@ -367,21 +393,28 @@ class _LineFeatureSheetState extends State<_LineFeatureSheet> {
             ),
           ),
           const SizedBox(height: 16),
-          const Text('Save line feature', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
           Text(
-            '${widget.pointCount} points traced — choose feature type per layout map',
+            widget.startMode ? 'Draw line feature' : 'Save line feature',
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white),
+          ),
+          Text(
+            widget.startMode
+                ? 'Choose what you are tracing — pan/zoom freely, then tap Add point at the crosshair'
+                : '${widget.pointCount} points recorded — optional label for layout map',
             style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _nameCtrl,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              labelText: 'Optional label (e.g. Canal Rd, Nala)',
-              labelStyle: const TextStyle(color: Colors.white54, fontSize: 12),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          if (!widget.startMode) ...[
+            const SizedBox(height: 16),
+            TextField(
+              controller: _nameCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Optional label (e.g. Canal Rd, Nala)',
+                labelStyle: const TextStyle(color: Colors.white54, fontSize: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
             ),
-          ),
+          ],
           const SizedBox(height: 12),
           Wrap(
             spacing: 6,
@@ -413,7 +446,10 @@ class _LineFeatureSheetState extends State<_LineFeatureSheet> {
               backgroundColor: const Color(0xFF42A5F5),
               foregroundColor: Colors.black,
             ),
-            child: const Text('SAVE LINE ON MAP', style: TextStyle(fontWeight: FontWeight.w800)),
+            child: Text(
+              widget.startMode ? 'START DRAWING' : 'SAVE LINE ON MAP',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
