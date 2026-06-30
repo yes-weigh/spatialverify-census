@@ -81,22 +81,23 @@ jobs:
         run: npm install -g firebase-tools@15.1.0
 
       - name: Authenticate to Google Cloud
+        id: gcp-auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          token_format: access_token
 
       - name: Publish to Firebase (OTA)
         env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          GOOGLE_ACCESS_TOKEN: ${{ steps.gcp-auth.outputs.access_token }}
           GITHUB_SHA: ${{ github.sha }}
           RELEASE_NOTES: ${{ github.event.head_commit.message || 'Manual workflow run' }}
           PUBSPEC_PATH: pubspec.yaml
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
           BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
         run: |
-          if [ -z "${FIREBASE_SERVICE_ACCOUNT}" ] && [ -z "${FIREBASE_TOKEN}" ] && [ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
-            echo "::warning::No FIREBASE_SERVICE_ACCOUNT or FIREBASE_TOKEN — APK built but not published."
+          if [ -z "${GOOGLE_ACCESS_TOKEN}" ] && [ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+            echo "::warning::No FIREBASE_SERVICE_ACCOUNT configured — APK built but not published."
             exit 0
           fi
           bash ../scripts/publish_android_release.sh build/app/outputs/flutter-apk/app-release.apk

@@ -9,25 +9,26 @@ if [[ -z "${APK_PATH}" || ! -f "${APK_PATH}" ]]; then
   exit 1
 fi
 
-if [[ -z "${FIREBASE_TOKEN:-}" && -z "${FIREBASE_SERVICE_ACCOUNT:-}" && -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" && -z "${GOOGLE_GHA_CREDS_PATH:-}" ]]; then
+if [[ -z "${GOOGLE_ACCESS_TOKEN:-}" && -z "${FIREBASE_TOKEN:-}" && -z "${FIREBASE_SERVICE_ACCOUNT:-}" && -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" && -z "${GOOGLE_GHA_CREDS_PATH:-}" ]]; then
   echo "FIREBASE_SERVICE_ACCOUNT (recommended), google-github-actions/auth, or FIREBASE_TOKEN is required" >&2
   exit 1
 fi
 
-# firebase login:ci stores a refresh token. Exchange it for an OAuth access token so
-# we can call Google APIs. Firebase Storage REST (firebasestorage.googleapis.com)
-# enforces security rules — app-releases/android has allow write: if false — so CI
-# uploads via the GCS JSON API, which uses project IAM instead.
+# OAuth access token for GCS upload + Firestore REST (see firebase_access_token.js).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if command -v npm >/dev/null 2>&1; then
-  FIREBASE_TOOLS_NODE_PATH="$(npm root -g)"
-  export NODE_PATH="${FIREBASE_TOOLS_NODE_PATH}${NODE_PATH:+:${NODE_PATH}}"
+if [[ -n "${GOOGLE_ACCESS_TOKEN:-}" ]]; then
+  ACCESS_TOKEN="${GOOGLE_ACCESS_TOKEN}"
+else
+  if command -v npm >/dev/null 2>&1; then
+    FIREBASE_TOOLS_NODE_PATH="$(npm root -g)"
+    export NODE_PATH="${FIREBASE_TOOLS_NODE_PATH}${NODE_PATH:+:${NODE_PATH}}"
+  fi
+  if ! node -e "require('firebase-tools/lib/auth')" >/dev/null 2>&1; then
+    echo "firebase-tools is required. Install with: npm install -g firebase-tools" >&2
+    exit 1
+  fi
+  ACCESS_TOKEN="$(node "${SCRIPT_DIR}/firebase_access_token.js")"
 fi
-if ! node -e "require('firebase-tools/lib/auth')" >/dev/null 2>&1; then
-  echo "firebase-tools is required. Install with: npm install -g firebase-tools" >&2
-  exit 1
-fi
-ACCESS_TOKEN="$(node "${SCRIPT_DIR}/firebase_access_token.js")"
 
 PROJECT_ID="${FIREBASE_PROJECT_ID:-spatialverify-census}"
 STORAGE_BUCKET="${FIREBASE_STORAGE_BUCKET:-spatialverify-census.firebasestorage.app}"

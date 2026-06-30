@@ -2,8 +2,9 @@
 'use strict';
 
 // Obtain a Google OAuth access token for GCS upload + Firestore REST.
-// Tries, in order: Application Default Credentials (google-github-actions/auth),
-// FIREBASE_SERVICE_ACCOUNT JSON, then FIREBASE_TOKEN (firebase login:ci).
+// Tries, in order: GOOGLE_ACCESS_TOKEN (from google-github-actions/auth),
+// Application Default Credentials, FIREBASE_SERVICE_ACCOUNT JSON,
+// then FIREBASE_TOKEN (firebase login:ci).
 
 function resolveGoogleAuthLibrary() {
   const paths = [];
@@ -23,32 +24,56 @@ function resolveGoogleAuthLibrary() {
   }
 }
 
-async function getTokenFromAdc() {
-  const { GoogleAuth } = resolveGoogleAuthLibrary();
-  const auth = new GoogleAuth({
-    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-  });
-  const client = await auth.getClient();
-  const accessToken = await client.getAccessToken();
-  if (!accessToken?.token) {
-    throw new Error('Application Default Credentials returned no token');
+function isRetryable(err) {
+  const msg = String(err?.message || err);
+  return /Premature close|ECONNRESET|ETIMEDOUT|socket hang up|503|502|429/i.test(msg);
+}
+
+async function withRetries(label, fn, { attempts = 4, delayMs = 1500 } = {}) {
+  let lastErr;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isRetryable(err) || i === attempts) break;
+      console.error(`Auth via ${label} attempt ${i}/${attempts} failed (${err.message}); retrying...`);
+      await new Promise((r) => setTimeout(r, delayMs * i));
+    }
   }
-  return accessToken.token;
+  throw lastErr;
+}
+
+async function getTokenFromAdc() {
+  return withRetries('Application Default Credentials', async () => {
+    const { GoogleAuth } = resolveGoogleAuthLibrary();
+    const auth = new GoogleAuth({
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    });
+    const client = await auth.getClient();
+    const accessToken = await client.getAccessToken();
+    if (!accessToken?.token) {
+      throw new Error('Application Default Credentials returned no token');
+    }
+    return accessToken.token;
+  });
 }
 
 async function getTokenFromServiceAccount(json) {
-  const credentials = typeof json === 'string' ? JSON.parse(json) : json;
-  const { GoogleAuth } = resolveGoogleAuthLibrary();
-  const auth = new GoogleAuth({
-    credentials,
-    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+  return withRetries('FIREBASE_SERVICE_ACCOUNT', async () => {
+    const credentials = typeof json === 'string' ? JSON.parse(json) : json;
+    const { GoogleAuth } = resolveGoogleAuthLibrary();
+    const auth = new GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    });
+    const client = await auth.getClient();
+    const accessToken = await client.getAccessToken();
+    if (!accessToken?.token) {
+      throw new Error('Service account token exchange returned no token');
+    }
+    return accessToken.token;
   });
-  const client = await auth.getClient();
-  const accessToken = await client.getAccessToken();
-  if (!accessToken?.token) {
-    throw new Error('Service account token exchange returned no token');
-  }
-  return accessToken.token;
 }
 
 async function getTokenFromFirebaseCi(refreshToken) {
@@ -61,6 +86,12 @@ async function getTokenFromFirebaseCi(refreshToken) {
 }
 
 async function main() {
+  const preset = process.env.GOOGLE_ACCESS_TOKEN?.trim();
+  if (preset) {
+    process.stdout.write(preset);
+    return;
+  }
+
   const sa = process.env.FIREBASE_SERVICE_ACCOUNT;
   const refreshToken = process.env.FIREBASE_TOKEN;
   const hasAdc =
@@ -71,14 +102,12 @@ async function main() {
   const attempts = [];
   if (hasAdc) {
     attempts.push({ label: 'Application Default Credentials', fn: getTokenFromAdc });
-  }
-  if (sa) {
+  } else if (sa) {
     attempts.push({
       label: 'FIREBASE_SERVICE_ACCOUNT',
       fn: () => getTokenFromServiceAccount(sa),
     });
-  }
-  if (refreshToken) {
+  } else if (refreshToken) {
     attempts.push({
       label: 'FIREBASE_TOKEN',
       fn: () => getTokenFromFirebaseCi(refreshToken),
