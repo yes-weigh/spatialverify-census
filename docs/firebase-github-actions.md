@@ -36,6 +36,8 @@ User tokens from `firebase login:ci` expire or get revoked. Use a service accoun
 | **Firebase Admin** | Firebase Deploy: rules, hosting, functions (`firebase deploy`) |
 | **Service Usage Consumer** | Required if deploy fails with `Permission denied to get service [firestore.googleapis.com]` |
 
+No need to enable **IAM Service Account Credentials API** for OTA publish — CI uses the service-account JSON file via Application Default Credentials.
+
 **Minimum for OTA only:** Storage Object Admin + Cloud Datastore User.
 
 **Minimum for OTA + Firebase Deploy:** add **Firebase Admin** and **Service Usage Consumer** (Firebase Admin alone is often enough, but add Service Usage Consumer if you still see 403 on `serviceusage.googleapis.com`).
