@@ -8,7 +8,7 @@ Firebase project: **spatialverify-census**
 |----------|------|--------------|--------------|
 | **SpatialVerify CI** | [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | Push/PR to `main` or `develop` | `flutter analyze`, tests, debug APK build |
 | **Publish OTA release APK** | same file, job `publish-android-release` | Push to `main` (after mobile job passes) | Bump build number, release APK, publish to Firebase, commit `[skip ci]` |
-| **Firebase Deploy** | [`.github/workflows/firebase-deploy.yml`](../.github/workflows/firebase-deploy.yml) | Push to `main` when `firebase/**`, `public/**`, or Firebase config changes | Firestore rules, Storage rules, Hosting |
+| **Firebase Deploy** | [`.github/workflows/firebase-deploy.yml`](../.github/workflows/firebase-deploy.yml) | Push to `main` when `firebase/**`, `public/**`, `functions/**`, or Firebase config changes | Firestore rules, Storage rules, Hosting, Cloud Functions |
 
 CI auth (in order of preference):
 
@@ -24,11 +24,28 @@ User tokens from `firebase login:ci` expire or get revoked. Use a service accoun
 1. [Google Cloud Console](https://console.cloud.google.com/) → project **spatialverify-census**
 2. **IAM & Admin** → **Service Accounts** → **Create**
 3. Name e.g. `github-actions-ota`
-4. Grant roles:
-   - **Storage Object Admin** (upload APK to the default bucket)
-   - **Cloud Datastore User** (PATCH `system/android_release` in Firestore)
-   - **Firebase Hosting Admin** (only if you use Firebase Deploy workflow for hosting)
+4. Grant IAM roles (see table below)
 5. **Keys** → **Add key** → **JSON** → download the file
+
+#### IAM roles for `github-actions-ota`
+
+| Role | Why |
+|------|-----|
+| **Storage Object Admin** | OTA: upload APK to Storage |
+| **Cloud Datastore User** | OTA: PATCH `system/android_release` in Firestore |
+| **Firebase Admin** | Firebase Deploy: rules, hosting, functions (`firebase deploy`) |
+| **Service Usage Consumer** | Required if deploy fails with `Permission denied to get service [firestore.googleapis.com]` |
+
+**Minimum for OTA only:** Storage Object Admin + Cloud Datastore User.
+
+**Minimum for OTA + Firebase Deploy:** add **Firebase Admin** and **Service Usage Consumer** (Firebase Admin alone is often enough, but add Service Usage Consumer if you still see 403 on `serviceusage.googleapis.com`).
+
+To add roles in GCP Console:
+
+1. **IAM & Admin** → **IAM** → **Grant access**
+2. Principal: `github-actions-ota@spatialverify-census.iam.gserviceaccount.com`
+3. Add the missing roles → **Save**
+4. Re-run **Firebase Deploy** in GitHub Actions (no secret re-upload needed)
 
 ### 2. Store in GitHub
 
