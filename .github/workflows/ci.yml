@@ -81,7 +81,6 @@ jobs:
         run: npm install -g firebase-tools@15.1.0
 
       - name: Authenticate to Google Cloud
-        if: secrets.FIREBASE_SERVICE_ACCOUNT != ''
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
