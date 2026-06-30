@@ -5,7 +5,7 @@ import '../../../core/database/database.dart';
 import '../../../core/models/models.dart';
 import '../../../core/storage/secure_storage.dart';
 import '../../licensing/data/user_account_repository.dart';
-import '../../licensing/presentation/licensing_providers.dart';
+import 'auth_service.dart';
 
 class FirebaseAuthRepository implements AuthService {
   FirebaseAuthRepository({
