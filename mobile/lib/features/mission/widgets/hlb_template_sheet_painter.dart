@@ -81,7 +81,7 @@ class HlbTemplateSheetPainter extends CustomPainter {
       gaps: gaps,
       selectedGapId: selectedGapId,
       highlightGaps: highlightGaps,
-      showBoundary: showBoundary,
+      showBoundary: showBoundary && templateImage == null,
       showBuildings: showBuildings,
       showLandmarks: showLandmarks,
       showLineFeatures: showLineFeatures,

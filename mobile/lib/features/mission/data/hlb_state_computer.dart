@@ -5,6 +5,7 @@ import '../models/mission_models.dart';
 import 'hlb_geo_engine.dart';
 import 'hlb_local_state.dart';
 import 'hlb_official_catalog.dart';
+import 'hlb_panel_projection.dart';
 
 /// Derives discovery, gaps, and draft map entirely from local HLB state.
 class HlbStateComputer {
@@ -343,16 +344,17 @@ class HlbStateComputer {
   }
 
   static DraftHlbMap draftMap(HlbLocalState state) {
-    final bounds = _bounds(state);
     final vertices = _vertices(state);
     final closed = _hasOfficial(state) || HlbGeoEngine.boundaryClosed(vertices);
+    final panelUvRing = uvRingFromState(state);
 
-    final boundary = vertices.length >= 2
-        ? vertices.map((v) {
-            final p = HlbGeoEngine.projectToMap(v.latitude, v.longitude, bounds);
-            return models.MapPoint(p.x, p.y);
-          }).toList()
-        : <models.MapPoint>[];
+    final boundary = panelUvRing.length >= 3
+        ? panelUvRing.map((p) => models.MapPoint(p.x, p.y)).toList()
+        : vertices.length >= 2
+            ? vertices
+                .map((v) => projectForDraftMap(state, v.latitude, v.longitude))
+                .toList()
+            : <models.MapPoint>[];
 
     final allBc = state.breadcrumbs.map((b) => GpsCoord(b.latitude, b.longitude)).toList();
     final ring = _officialRing(state);
@@ -360,12 +362,12 @@ class HlbStateComputer {
     final step = bc.isEmpty ? 1 : (bc.length / 200).ceil().clamp(1, bc.length);
     final walkPath = <models.MapPoint>[];
     for (var i = 0; i < bc.length; i += step) {
-      final p = HlbGeoEngine.projectToMap(bc[i].latitude, bc[i].longitude, bounds);
+      final p = projectForDraftMap(state, bc[i].latitude, bc[i].longitude);
       walkPath.add(models.MapPoint(p.x, p.y));
     }
 
     final buildings = state.buildings.map((b) {
-      final p = HlbGeoEngine.projectToMap(b.latitude, b.longitude, bounds);
+      final p = projectForDraftMap(state, b.latitude, b.longitude);
       return DraftMapBuilding(
         id: b.localId,
         buildingNumber: b.buildingNumber,
@@ -378,7 +380,7 @@ class HlbStateComputer {
     }).toList();
 
     final landmarks = state.landmarks.map((l) {
-      final p = HlbGeoEngine.projectToMap(l.latitude, l.longitude, bounds);
+      final p = projectForDraftMap(state, l.latitude, l.longitude);
       return DraftMapLandmark(
         name: l.name,
         type: HlbOfficialCatalog.normalizeLandmarkType(l.landmarkType),
@@ -398,7 +400,7 @@ class HlbStateComputer {
 
     final buildingCoords = {
       for (final b in state.buildings)
-        b.localId: HlbGeoEngine.projectToMap(b.latitude, b.longitude, bounds),
+        b.localId: projectForDraftMap(state, b.latitude, b.longitude),
     };
     final serpentineArrows = <SerpentineArrow>[];
     for (var i = 0; i < ordered.length - 1; i++) {
@@ -417,7 +419,7 @@ class HlbStateComputer {
     final lineFeatures = state.roadSegments.map((seg) {
       final pts = seg.points
           .map((p) {
-            final proj = HlbGeoEngine.projectToMap(p.lat, p.lng, bounds);
+            final proj = projectForDraftMap(state, p.lat, p.lng);
             return models.MapPoint(proj.x, proj.y);
           })
           .toList();
@@ -450,7 +452,7 @@ class HlbStateComputer {
       final firstB = _buildingById(state.buildings, firstId);
       final lastB = _buildingById(state.buildings, lastId);
       if (firstB != null) {
-        final p = HlbGeoEngine.projectToMap(firstB.latitude, firstB.longitude, bounds);
+        final p = projectForDraftMap(state, firstB.latitude, firstB.longitude);
         startPoint = DraftMapEndpoint(
           label: 'Starting Point',
           mapX: p.x,
@@ -459,7 +461,7 @@ class HlbStateComputer {
         );
       }
       if (lastB != null && lastB.localId != firstId) {
-        final p = HlbGeoEngine.projectToMap(lastB.latitude, lastB.longitude, bounds);
+        final p = projectForDraftMap(state, lastB.latitude, lastB.longitude);
         endPoint = DraftMapEndpoint(
           label: 'Ending Point',
           mapX: p.x,

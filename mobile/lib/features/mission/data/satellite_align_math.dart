@@ -117,6 +117,34 @@ class SatelliteAlignMath {
     return fallback;
   }
 
+  /// Inverse of [imageUvToLatLngRotated] — GPS to map-panel UV (0–1).
+  static ({double u, double v})? imageUvFromLatLngRotated(LatLng point, ImageBounds bounds) {
+    var lat = point.latitude;
+    var lng = point.longitude;
+    final center = bounds.center;
+    final mPerDegLng = _mPerDegLat * math.cos(center.latitude * math.pi / 180);
+
+    if (bounds.rotation.abs() > 0.001) {
+      final dx = (lng - center.longitude) * mPerDegLng;
+      final dy = (lat - center.latitude) * _mPerDegLat;
+      final rad = bounds.rotation * math.pi / 180;
+      final cosR = math.cos(rad);
+      final sinR = math.sin(rad);
+      final unrotDx = dx * cosR - dy * sinR;
+      final unrotDy = dx * sinR + dy * cosR;
+      lng = center.longitude + unrotDx / mPerDegLng;
+      lat = center.latitude + unrotDy / _mPerDegLat;
+    }
+
+    final latSpan = bounds.north - bounds.south;
+    final lngSpan = bounds.east - bounds.west;
+    if (latSpan.abs() < 1e-12 || lngSpan.abs() < 1e-12) return null;
+    return (
+      u: (lng - bounds.west) / lngSpan,
+      v: 1 - (lat - bounds.south) / latSpan,
+    );
+  }
+
   static ImageBounds boundsFromCenter(double centerLat, double centerLng, double widthM, double heightM) {
     final latSpan = heightM / _mPerDegLat;
     final lngSpan = widthM / (_mPerDegLat * math.cos(centerLat * math.pi / 180));

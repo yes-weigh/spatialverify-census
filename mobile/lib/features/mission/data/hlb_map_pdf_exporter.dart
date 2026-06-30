@@ -52,6 +52,7 @@ Future<Uint8List> rasterizeHlbMapPng(
       templateImage: templateImage,
       sheetInsets: layout.sheetInsets,
       mapPanelRect: layout.mapPanelRect,
+      showBoundary: templateImage == null,
     ).paint(canvas, size);
 
     final picture = recorder.endRecording();
