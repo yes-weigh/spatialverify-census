@@ -121,6 +121,10 @@ final hlbExportTemplateProvider = FutureProvider.family<HlbExportTemplateLayout,
   return resolveHlbExportTemplate(state?.layoutGeoref, query.ebId);
 });
 
+final hlbRawStateProvider = FutureProvider.family<HlbLocalState?, String>((ref, ebId) async {
+  return ref.watch(missionLocalFirstProvider).getRawState(ebId);
+});
+
 class CoverageGapsQuery {
   const CoverageGapsQuery({
     required this.ebId,

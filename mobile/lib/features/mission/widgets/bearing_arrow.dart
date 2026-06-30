@@ -139,21 +139,27 @@ mixin MissionGpsTracking<T extends StatefulWidget> on State<T> {
   Timer? _breadcrumbTimer;
   final _headingTracker = DeviceHeadingTracker();
 
+  /// When false, GPS updates refresh [position] without calling [setState] on the host.
+  bool rebuildOnGpsUpdate = true;
+
   /// Request permission, fetch an immediate fix, then start the GPS stream.
   Future<void> bootMissionGps({
     required String ebId,
     required void Function(Position) onPosition,
     void Function(Position)? onBreadcrumb,
     Duration breadcrumbInterval = const Duration(seconds: 30),
+    bool rebuildOnGpsUpdate = true,
   }) async {
+    this.rebuildOnGpsUpdate = rebuildOnGpsUpdate;
     await ensureLocationPermission();
     try {
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
       if (mounted) {
-        setState(() => position = pos);
+        position = pos;
         onPosition(pos);
+        if (this.rebuildOnGpsUpdate) setState(() {});
       }
     } catch (_) {}
     startMissionGps(
@@ -178,8 +184,9 @@ mixin MissionGpsTracking<T extends StatefulWidget> on State<T> {
     ).listen((pos) {
       _headingTracker.updateFromPosition(pos);
       if (mounted) {
-        setState(() => position = pos);
+        position = pos;
         onPosition(pos);
+        if (rebuildOnGpsUpdate) setState(() {});
       }
     });
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -63,6 +65,11 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
   var _showBasemap = true;
   var _pdfOpacity = 0.45;
   var _basemap = MissionMapBasemap.hybrid;
+  var _exportingPdf = false;
+
+  final _positionNotifier = ValueNotifier<Position?>(null);
+  Timer? _aimCursorThrottle;
+  DateTime? _lastAimCursorPaint;
 
   MissionHlbLandmarkPin? _fineTuningLandmark;
   gmaps.LatLng? _fineTunePosition;
@@ -82,6 +89,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
     super.initState();
     if (widget.initialPosition != null) {
       position = widget.initialPosition;
+      _positionNotifier.value = widget.initialPosition;
     }
     _boot();
   }
@@ -89,9 +97,14 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
   Future<void> _boot() async {
     await bootMissionGps(
       ebId: widget.ebId,
-      onPosition: (_) {
-        _updateStepIndex();
-        setState(() {});
+      rebuildOnGpsUpdate: false,
+      onPosition: (pos) {
+        _positionNotifier.value = pos;
+        if (_navigateMode) {
+          final prevStep = _stepIndex;
+          _updateStepIndex();
+          if (prevStep != _stepIndex && mounted) setState(() {});
+        }
       },
       onBreadcrumb: (_) {},
     );
@@ -123,6 +136,10 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
           _showDraftBuildings = true;
           _showBasemap = true;
         }
+        if ((session?.hlbBuildings.length ?? 0) > 0) {
+          _showDraftBuildings = true;
+          _showWalkPath = true;
+        }
       });
     }
   }
@@ -147,12 +164,14 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
 
   @override
   void dispose() {
+    _aimCursorThrottle?.cancel();
+    _positionNotifier.dispose();
     stopMissionGps();
     super.dispose();
   }
 
   String _phaseLabel(DiscoveryStatus d) {
-    final s = ref.watch(appStringsProvider);
+    final s = ref.read(appStringsProvider);
     if (_fineTuningLandmark != null) {
       return s.fineTuneLandmarkHint;
     }
@@ -167,7 +186,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
     DiscoveryStatus d, {
     required BuildContext context,
   }) {
-    final s = ref.watch(appStringsProvider);
+    final s = ref.read(appStringsProvider);
     if (!d.hasOfficialBoundary) {
       return (
         label: s.importHloPdf,
@@ -190,15 +209,17 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
       );
     }
     return (
-      label: s.importHloPdf,
-      icon: Icons.upload_file_outlined,
-      color: const Color(0xFF00897B),
-      onTap: _openGeorefWizard,
+      label: s.openMapLayers,
+      icon: Icons.layers_outlined,
+      color: const Color(0xFF42A5F5),
+      onTap: () => setState(() => _layersOpen = true),
     );
   }
 
   Future<void> _downloadHlbMapPdf() async {
+    if (_exportingPdf) return;
     final s = ref.read(appStringsProvider);
+    setState(() => _exportingPdf = true);
     try {
       final map = await ref.read(draftMapProvider(_query).future);
       final state = await ref.read(missionLocalFirstProvider).getRawState(widget.ebId);
@@ -212,6 +233,8 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${s.pdfExportFailed}: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _exportingPdf = false);
     }
   }
 
@@ -253,7 +276,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
           MissionMoreSheetItem(
             icon: Icons.download_outlined,
             label: s.downloadHlbMapPdf,
-            onTap: _downloadHlbMapPdf,
+            onTap: _exportingPdf ? null : _downloadHlbMapPdf,
           ),
         if (d.buildingsDiscovered > 0)
           MissionMoreSheetItem(
@@ -299,18 +322,9 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(discoveryStatusProvider(_query), (previous, next) {
-      if (next.hasValue) {
-        if (next.value!.buildingsDiscovered > 0) {
-          _showDraftBuildings = true;
-          _showWalkPath = true;
-        }
-        _reloadSession();
-      }
-    });
-
     final discoveryAsync = ref.watch(discoveryStatusProvider(_query));
     final completionAsync = ref.watch(missionCompletionProvider(_query));
+    final strings = ref.watch(appStringsProvider);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D14),
@@ -319,8 +333,6 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
         error: (e, _) => Center(child: Text('$e')),
         data: (d) {
           final session = _session;
-          final pos = position ?? widget.initialPosition;
-          final userLatLng = pos != null ? LatLng(pos.latitude, pos.longitude) : null;
           final boundary = session?.boundaryRing ?? [];
           final center = session?.mapCenter ??
               MissionSatelliteMap.boundsCenter(boundary) ??
@@ -343,23 +355,14 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                       : showLegacyBar
                           ? 68.0
                           : 0.0;
-          // Fit button sits above the layers panel; reserve bottom chrome for left-side HUDs.
           final hudBottomReserved = bottomInset + bottomHudHeight;
           final primary = _primaryAction(d, context: context);
           final showHlbFormSheet = !_showBasemap && !_showPdf && d.hasOfficialBoundary;
 
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              if (showHlbFormSheet)
-                MissionHlbFormSheetBackdrop(
-                  query: _query,
-                  showBoundary: _showBoundary,
-                  showBuildings: _showDraftBuildings,
-                  showLineFeatures: _showHlbLines,
-                  showWalkPath: _showWalkPath,
-                ),
-              MissionMapCanvas(
+          Widget mapLayer(Position? livePos) {
+            final userLatLng = livePos != null ? LatLng(livePos.latitude, livePos.longitude) : null;
+            return RepaintBoundary(
+              child: MissionMapCanvas(
                 center: center,
                 boundary: boundary,
                 userPosition: userLatLng,
@@ -368,6 +371,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                 pdfImageUrl: session?.layoutImagePath,
                 pdfBounds: session?.imageBounds,
                 pdfOpacity: _pdfOpacity,
+                boundaryUvRing: session?.uvRing ?? const [],
                 showRegionPins: _showPins,
                 showBoundary: _showBoundary && !showHlbFormSheet,
                 showNavigationRoute: _showRoute && showNav,
@@ -388,18 +392,11 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                 transparentBackground: showHlbFormSheet,
                 mapType: _basemap.googleType,
                 navigationDestination: showNav ? start : null,
-                navigationOrigin: pos != null ? gmaps.LatLng(pos.latitude, pos.longitude) : null,
+                navigationOrigin: userLatLng != null ? gmaps.LatLng(userLatLng.latitude, userLatLng.longitude) : null,
                 fitToken: _fitToken,
                 followUserLocation: _navigateMode,
                 lockRotateGestures: false,
-                onCameraTargetChanged: showAimCrosshair
-                    ? (target) {
-                        if (_aimCursor?.latitude != target.latitude ||
-                            _aimCursor?.longitude != target.longitude) {
-                          setState(() => _aimCursor = target);
-                        }
-                      }
-                    : null,
+                onCameraTargetChanged: _lineDrawMode ? _onLineDrawCameraMove : null,
                 onMapCenterReaderReady: (reader) => _readMapCenter = reader,
                 onRouteLoaded: (route) => setState(() {
                   _route = route;
@@ -412,6 +409,24 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                 fineTuningLandmarkId: _fineTuningLandmark?.id,
                 fineTuningLandmarkPosition: _fineTunePosition,
                 onLandmarkDrag: (id, pos) => setState(() => _fineTunePosition = pos),
+              ),
+            );
+          }
+
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              if (showHlbFormSheet)
+                MissionHlbFormSheetBackdrop(
+                  query: _query,
+                  showBoundary: _showBoundary,
+                  showBuildings: _showDraftBuildings,
+                  showLineFeatures: _showHlbLines,
+                  showWalkPath: _showWalkPath,
+                ),
+              ValueListenableBuilder<Position?>(
+                valueListenable: _positionNotifier,
+                builder: (context, livePos, _) => mapLayer(livePos ?? widget.initialPosition),
               ),
               MissionMapLayersDismissBarrier(
                 visible: _layersOpen,
@@ -449,7 +464,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                           children: [
                             MissionMapHudIconButton(
                               icon: Icons.center_focus_strong,
-                              tooltip: 'Fit boundary',
+                              tooltip: strings.fitBoundary,
                               onPressed: () => setState(() => _fitToken++),
                             ),
                             const SizedBox(height: 8),
@@ -504,6 +519,7 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                           right: 12,
                           bottom: bottomInset,
                           child: MissionMapPlaceHud(
+                            strings: strings,
                             selected: _placeTool,
                             onToolSelected: (tool) => _onPlaceToolSelected(context, tool),
                             onPlace: () => _placeFromCrosshair(context, d),
@@ -573,6 +589,17 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
       } catch (_) {}
     }
     return _aimCursor;
+  }
+
+  void _onLineDrawCameraMove(gmaps.LatLng target) {
+    _aimCursor = target;
+    final now = DateTime.now();
+    if (_lastAimCursorPaint != null &&
+        now.difference(_lastAimCursorPaint!) < const Duration(milliseconds: 120)) {
+      return;
+    }
+    _lastAimCursorPaint = now;
+    if (mounted) setState(() {});
   }
 
   void _onPlaceToolSelected(BuildContext context, MapPlaceTool tool) {

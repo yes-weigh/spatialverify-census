@@ -81,7 +81,8 @@ class SatelliteAlignMath {
     final mPerDegLng = _mPerDegLat * math.cos(center.latitude * math.pi / 180);
     final dx = (unrotated.longitude - center.longitude) * mPerDegLng;
     final dy = (unrotated.latitude - center.latitude) * _mPerDegLat;
-    final rad = bounds.rotation * math.pi / 180;
+    // Google ground overlay bearing is clockwise from north.
+    final rad = -bounds.rotation * math.pi / 180;
     final cosR = math.cos(rad);
     final sinR = math.sin(rad);
     final rotDx = dx * cosR - dy * sinR;
@@ -103,6 +104,18 @@ class SatelliteAlignMath {
             return GpsPoint(ll.latitude, ll.longitude);
           }(),
       ];
+
+  /// Prefer UV ring + overlay bounds so the GPS ring stays locked to the PDF after fine tune.
+  static List<GpsPoint> gpsBoundaryForOverlay(
+    ImageBounds? bounds,
+    List<({double x, double y})> uvRing, {
+    List<GpsPoint> fallback = const [],
+  }) {
+    if (bounds != null && uvRing.length >= 3) {
+      return gpsBoundaryFromUvRing(bounds, uvRing);
+    }
+    return fallback;
+  }
 
   static ImageBounds boundsFromCenter(double centerLat, double centerLng, double widthM, double heightM) {
     final latSpan = heightM / _mPerDegLat;

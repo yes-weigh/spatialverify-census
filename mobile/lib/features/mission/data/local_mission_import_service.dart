@@ -21,6 +21,7 @@ import 'hlb_local_state.dart';
 import 'hlo_pdf_metadata_parser.dart';
 import 'landmark_anchor_service.dart';
 import 'layout_georef_math.dart';
+import 'mission_map_session.dart';
 import 'map_panel_ocr_service.dart';
 import 'mission_cv_worker.dart';
 import 'mission_seed_location_resolver.dart';
@@ -634,15 +635,39 @@ class LocalMissionImportService {
     required List<GpsPoint> gpsBoundary,
     ImageBounds? imageBounds,
   }) async {
-    if (gpsBoundary.length < 3) throw Exception('Boundary not ready');
-
     final state = await _cache.get(ebId);
     if (state == null) throw Exception('HLB not found');
 
-    final closed = [...gpsBoundary.map((p) => [p.lng, p.lat]), [gpsBoundary.first.lng, gpsBoundary.first.lat]];
-    final start = SatelliteAlignMath.northWestStartPoint(gpsBoundary);
-    final area = SatelliteAlignMath.polygonAreaSqMeters(gpsBoundary);
+    final uvRing = resolveMissionUvRing(
+      intelligenceMap: intelligence,
+      layoutGeoref: state.layoutGeoref,
+    );
+    final boundary = resolveMissionGpsBoundary(
+      storedRing: gpsBoundary,
+      uvRing: uvRing,
+      imageBounds: imageBounds,
+    );
+    if (boundary.length < 3) throw Exception('Boundary not ready');
+
+    final closed = [...boundary.map((p) => [p.lng, p.lat]), [boundary.first.lng, boundary.first.lat]];
+    final start = SatelliteAlignMath.northWestStartPoint(boundary);
+    final area = SatelliteAlignMath.polygonAreaSqMeters(boundary);
     final existing = state.officialBoundary;
+
+    if (uvRing.length >= 3) {
+      final boundaryMeta = Map<String, dynamic>.from(intelligence['boundary'] as Map? ?? {});
+      boundaryMeta['gpsRing'] = boundary.map((p) => p.toJson()).toList();
+      boundaryMeta['uvRing'] = uvRing.map((p) => {'x': p.x, 'y': p.y}).toList();
+      intelligence['boundary'] = boundaryMeta;
+    }
+
+    if (imageBounds != null) {
+      final alignment = Map<String, dynamic>.from(intelligence['alignment'] as Map? ?? {});
+      alignment['imageBounds'] = imageBounds.toJson();
+      alignment.remove('affineMatrix');
+      alignment['method'] = 'pdf_overlay_fine_tune';
+      intelligence['alignment'] = alignment;
+    }
 
     final official = existing != null
         ? LocalOfficialBoundary(
@@ -668,8 +693,9 @@ class LocalMissionImportService {
       layoutGeoref: {
         ...?state.layoutGeoref,
         'missionIntelligence': intelligence,
-        'gpsBoundary': gpsBoundary.map((p) => p.toJson()).toList(),
+        'gpsBoundary': boundary.map((p) => p.toJson()).toList(),
         if (imageBounds != null) 'imageBounds': imageBounds.toJson(),
+        if (uvRing.length >= 3) 'uvRing': uvRing.map((p) => {'x': p.x, 'y': p.y}).toList(),
         'boundaryPolygon': {'type': 'Polygon', 'coordinates': [closed]},
         'polygonAreaSqMeters': area,
       },

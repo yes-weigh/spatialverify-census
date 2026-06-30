@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' hide LatLng;
 import 'package:latlong2/latlong.dart';
 
+import '../../../core/l10n/app_strings.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// Google map basemap options exposed in the layers HUD.
@@ -902,7 +903,7 @@ class MissionMapHudIconButton extends StatelessWidget {
         child: Tooltip(
           message: tooltip,
           child: Padding(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(13),
             child: Icon(icon, color: Colors.white, size: 22),
           ),
         ),
@@ -1060,6 +1061,7 @@ enum MapPlaceTool { building, feature, line }
 /// Center-crosshair placement HUD — pan, zoom, rotate, then place.
 class MissionMapPlaceHud extends StatelessWidget {
   const MissionMapPlaceHud({
+    required this.strings,
     required this.selected,
     required this.onToolSelected,
     required this.onPlace,
@@ -1067,6 +1069,7 @@ class MissionMapPlaceHud extends StatelessWidget {
     super.key,
   });
 
+  final AppStrings strings;
   final MapPlaceTool selected;
   final ValueChanged<MapPlaceTool> onToolSelected;
   final VoidCallback onPlace;
@@ -1084,18 +1087,12 @@ class MissionMapPlaceHud extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Pan · zoom · rotate — crosshair marks the spot',
-              style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
                   child: _toolChip(
                     icon: Icons.home_work_outlined,
-                    label: 'Building',
+                    label: strings.toolBuilding,
                     tool: MapPlaceTool.building,
                     color: const Color(0xFF00E676),
                   ),
@@ -1104,7 +1101,7 @@ class MissionMapPlaceHud extends StatelessWidget {
                 Expanded(
                   child: _toolChip(
                     icon: Icons.place_outlined,
-                    label: 'Feature',
+                    label: strings.toolFeature,
                     tool: MapPlaceTool.feature,
                     color: Colors.orange,
                   ),
@@ -1113,7 +1110,7 @@ class MissionMapPlaceHud extends StatelessWidget {
                 Expanded(
                   child: _toolChip(
                     icon: Icons.polyline_outlined,
-                    label: 'Road',
+                    label: strings.toolRoad,
                     tool: MapPlaceTool.line,
                     color: const Color(0xFF42A5F5),
                   ),
@@ -1129,10 +1126,10 @@ class MissionMapPlaceHud extends StatelessWidget {
                     icon: const Icon(Icons.add_location_alt_outlined, size: 20),
                     label: Text(
                       selected == MapPlaceTool.building
-                          ? 'Place building'
+                          ? strings.placeBuilding
                           : selected == MapPlaceTool.feature
-                              ? 'Place feature'
-                              : 'Start road',
+                              ? strings.placeFeature
+                              : strings.startRoad,
                       style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
                     ),
                     style: ElevatedButton.styleFrom(
@@ -1349,12 +1346,18 @@ Future<void> showMissionMoreSheet(
               const SizedBox(height: 8),
               for (final item in items)
                 ListTile(
-                  leading: Icon(item.icon, color: Colors.white70, size: 22),
-                  title: Text(item.label, style: const TextStyle(fontSize: 14)),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    item.onTap();
-                  },
+                  leading: Icon(item.icon, color: item.enabled ? Colors.white70 : Colors.white38, size: 22),
+                  title: Text(
+                    item.label,
+                    style: TextStyle(fontSize: 14, color: item.enabled ? Colors.white : Colors.white54),
+                  ),
+                  enabled: item.enabled,
+                  onTap: item.enabled
+                      ? () {
+                          Navigator.pop(ctx);
+                          item.onTap?.call();
+                        }
+                      : null,
                 ),
             ],
           ),
@@ -1368,11 +1371,13 @@ class MissionMoreSheetItem {
   const MissionMoreSheetItem({
     required this.icon,
     required this.label,
-    required this.onTap,
+    this.onTap,
   });
 
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+
+  bool get enabled => onTap != null;
 }
 

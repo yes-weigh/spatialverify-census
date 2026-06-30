@@ -1,12 +1,9 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../data/hlb_local_state.dart';
-import '../data/mission_local_first_service.dart';
 import '../models/mission_models.dart';
 import '../widgets/hlb_map_painter.dart';
 import 'mission_providers.dart';
@@ -24,7 +21,7 @@ class DiscoveryDashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final discoveryAsync = ref.watch(discoveryStatusProvider(_query));
     final mapAsync = ref.watch(draftMapProvider(_query));
-    final local = ref.watch(missionLocalFirstProvider);
+    final rawStateAsync = ref.watch(hlbRawStateProvider(ebId));
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D14),
@@ -41,10 +38,11 @@ class DiscoveryDashboardScreen extends ConsumerWidget {
       body: discoveryAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
-        data: (d) => FutureBuilder<HlbLocalState?>(
-          future: local.getRawState(ebId),
-          builder: (context, snap) {
-            final nodes = snap.data?.spatialNodes ?? [];
+        data: (d) => rawStateAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('$e')),
+          data: (state) {
+            final nodes = state?.spatialNodes ?? [];
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [

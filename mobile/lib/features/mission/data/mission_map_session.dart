@@ -87,6 +87,44 @@ List<({double x, double y})> parseUvRingFromJson(dynamic raw) {
   ];
 }
 
+/// UV ring from mission intelligence, then layoutGeoref fallback.
+List<({double x, double y})> resolveMissionUvRing({
+  Map<String, dynamic>? intelligenceMap,
+  Map<String, dynamic>? layoutGeoref,
+}) {
+  var ring = parseUvRingFromJson(
+    (intelligenceMap?['boundary'] as Map?)?['uvRing'],
+  );
+  if (ring.isEmpty) {
+    ring = parseUvRingFromJson(layoutGeoref?['uvRing']);
+  }
+  return ring;
+}
+
+/// GPS boundary locked to the PDF overlay when UV ring + image bounds exist.
+List<GpsPoint> resolveMissionGpsBoundary({
+  required List<GpsPoint> storedRing,
+  required List<({double x, double y})> uvRing,
+  required ImageBounds? imageBounds,
+}) {
+  if (imageBounds != null && uvRing.length >= 3) {
+    return SatelliteAlignMath.gpsBoundaryFromUvRing(imageBounds, uvRing);
+  }
+  return storedRing;
+}
+
+/// Boundary ring for map display — always derived from overlay bounds when possible.
+List<GpsPoint> missionMapBoundaryRing({
+  required List<GpsPoint> storedRing,
+  required List<({double x, double y})> uvRing,
+  required ImageBounds? overlayBounds,
+}) =>
+    resolveMissionGpsBoundary(
+      storedRing: storedRing,
+      uvRing: uvRing,
+      imageBounds: overlayBounds,
+    );
+
 /// Everything needed to render the gamified mission map for one HLB.
 class MissionMapSession {
   const MissionMapSession({
@@ -147,51 +185,38 @@ Future<MissionMapSession?> loadMissionMapSession(
   if (state == null) return null;
 
   final official = state.officialBoundary;
-  List<GpsPoint> ring = [];
+  List<GpsPoint> storedRing = [];
   gmaps.LatLng? start;
 
   if (official != null) {
-    ring = official.ringLatLng.map((p) => GpsPoint(p.lat, p.lng)).toList();
+    storedRing = official.ringLatLng.map((p) => GpsPoint(p.lat, p.lng)).toList();
     start = gmaps.LatLng(official.startLat, official.startLng);
   } else {
     final georefBoundary = state.layoutGeoref?['gpsBoundary'] as List<dynamic>?;
     if (georefBoundary != null) {
-      ring = georefBoundary
+      storedRing = georefBoundary
           .map((e) => GpsPoint.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
     }
   }
 
-  LatLng center;
-  if (ring.isNotEmpty) {
-    var lat = 0.0;
-    var lng = 0.0;
-    for (final p in ring) {
-      lat += p.lat;
-      lng += p.lng;
-    }
-    center = LatLng(lat / ring.length, lng / ring.length);
-  } else if (state.breadcrumbs.isNotEmpty) {
-    final b = state.breadcrumbs.last;
-    center = LatLng(b.latitude, b.longitude);
-  } else {
-    center = const LatLng(20.5937, 78.9629);
-  }
-
   String? layoutPath;
   ImageBounds? imageBounds;
   List<({double x, double y})> uvRing = [];
+  Map<String, dynamic>? intelMap;
 
   final intelRaw = state.missionIntelligence ?? state.layoutGeoref?['missionIntelligence'];
   if (intelRaw is Map) {
-    final intelMap = deepJsonMap(intelRaw);
+    intelMap = deepJsonMap(intelRaw);
     layoutPath = intelMap['layoutImagePath'] as String?;
     final alignment = intelMap['alignment'] as Map<String, dynamic>?;
     if (alignment?['imageBounds'] != null) {
       imageBounds = ImageBounds.fromJson(Map<String, dynamic>.from(alignment!['imageBounds'] as Map));
     }
-    final boundary = intelMap['boundary'] as Map<String, dynamic>?;
-    uvRing = parseUvRingFromJson(boundary?['uvRing']);
+    uvRing = resolveMissionUvRing(
+      intelligenceMap: intelMap,
+      layoutGeoref: state.layoutGeoref,
+    );
   }
 
   if (layoutPath == null || !await missionLayoutExists(layoutPath)) {
@@ -208,6 +233,28 @@ Future<MissionMapSession?> loadMissionMapSession(
   }
   if (uvRing.isEmpty) {
     uvRing = parseUvRingFromJson(state.layoutGeoref?['uvRing']);
+  }
+
+  final ring = resolveMissionGpsBoundary(
+    storedRing: storedRing,
+    uvRing: uvRing,
+    imageBounds: imageBounds,
+  );
+
+  LatLng center;
+  if (ring.isNotEmpty) {
+    var lat = 0.0;
+    var lng = 0.0;
+    for (final p in ring) {
+      lat += p.lat;
+      lng += p.lng;
+    }
+    center = LatLng(lat / ring.length, lng / ring.length);
+  } else if (state.breadcrumbs.isNotEmpty) {
+    final b = state.breadcrumbs.last;
+    center = LatLng(b.latitude, b.longitude);
+  } else {
+    center = const LatLng(20.5937, 78.9629);
   }
 
   final draftPins = state.buildings

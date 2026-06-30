@@ -28,6 +28,7 @@ import '../models/pdf_georef_models.dart';
 import '../widgets/hlo_pdf_georef_editor.dart';
 import 'landmark_verification_panel.dart';
 import '../data/mission_local_first_service.dart';
+import '../data/mission_map_session.dart';
 import '../data/mission_map_helpers.dart';
 import '../data/satellite_align_math.dart';
 import '../models/layout_georef_models.dart';
@@ -420,7 +421,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
-            onPressed: _pickPdfOrImage,
+            onPressed: _preparingPdf ? null : _pickPdfOrImage,
             icon: const Icon(Icons.upload_file),
             label: const Text('Choose HLO PDF'),
             style: FilledButton.styleFrom(
@@ -430,7 +431,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: kIsWeb ? null : _pickCamera,
+            onPressed: kIsWeb || _preparingPdf ? null : _pickCamera,
             icon: const Icon(Icons.camera_alt_outlined),
             label: Text(kIsWeb ? 'Camera not available on web' : 'Photograph printed map'),
           ),
@@ -501,6 +502,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
           pdfImageUrl: _layoutImageUrl,
           pdfBounds: _imageBounds,
           pdfOpacity: _opacity,
+          boundaryUvRing: _uvRingFromIntelligence(),
           showRegionPins: _showRegionPins,
           showBoundary: _showBoundaryLayer,
           showNavigationRoute: _showRouteLayer,
@@ -997,12 +999,9 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       final ring = await _localImport.trackBoundary(Uint8List.fromList(bytes));
       if (!mounted) return;
       setState(() => _boundaryRing = ring);
-      Future<void>.delayed(const Duration(milliseconds: 3000), () {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Boundary traced — apply to update the GPS ring')),
-        );
-      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Boundary traced — apply to update the GPS ring')),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1110,19 +1109,28 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
     final intel = _intelligence;
     if (bounds == null || intel == null) return;
 
-    final uvRing = _uvRingFromIntelligence();
-    final newBoundary = uvRing.length >= 3
-        ? SatelliteAlignMath.gpsBoundaryFromUvRing(bounds, uvRing)
-        : intel.gpsBoundary;
-
     final raw = Map<String, dynamic>.from(intel.raw ?? {});
+    var uvRing = _uvRingFromIntelligence();
+    if (uvRing.length < 3) {
+      final state = await ref.read(missionLocalFirstProvider).getRawState(widget.ebId);
+      uvRing = parseUvRingFromJson(state?.layoutGeoref?['uvRing']);
+    }
+    final newBoundary = SatelliteAlignMath.gpsBoundaryForOverlay(
+      bounds,
+      uvRing,
+      fallback: intel.gpsBoundary,
+    );
+
     raw['imageBounds'] = bounds.toJson();
     final alignment = Map<String, dynamic>.from(raw['alignment'] as Map? ?? {});
     alignment['imageBounds'] = bounds.toJson();
+    alignment.remove('affineMatrix');
+    alignment['method'] = 'pdf_overlay_fine_tune';
     raw['alignment'] = alignment;
     raw['boundary'] = {
       ...(raw['boundary'] as Map<String, dynamic>? ?? {}),
       'gpsRing': newBoundary.map((p) => p.toJson()).toList(),
+      if (uvRing.length >= 3) 'uvRing': uvRing.map((p) => {'x': p.x, 'y': p.y}).toList(),
     };
 
     await _localImport.applyReorientedBoundary(
@@ -1771,12 +1779,9 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
       final ring = await _localImport.trackBoundary(draft.mapBytes, metadata: draft.metadata);
       if (!mounted) return;
       setState(() => _boundaryRing = ring);
-      Future<void>.delayed(const Duration(milliseconds: 3000), () {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Boundary traced — red line follows the white border')),
-        );
-      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Boundary traced — red line follows the white border')),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2126,6 +2131,10 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
         context.go('/mission/${widget.projectId}/eb/${widget.ebId}');
       }
     } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyNetworkError(e))),
+      );
       setState(() {
         _error = friendlyNetworkError(e);
         _phase = _WizardPhase.mapExperience;

@@ -18,32 +18,12 @@ fi
 # we can call Google APIs. Firebase Storage REST (firebasestorage.googleapis.com)
 # enforces security rules — app-releases/android has allow write: if false — so CI
 # uploads via the GCS JSON API, which uses project IAM instead.
-ACCESS_TOKEN="$(python3 - <<'PY'
-import json, os, sys, urllib.error, urllib.parse, urllib.request
-
-data = urllib.parse.urlencode({
-    "grant_type": "refresh_token",
-    "client_id": "563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com",
-    "client_secret": "j9pD0uKhRVXXIWPkME5Gvejd",
-    "refresh_token": os.environ["FIREBASE_TOKEN"],
-}).encode()
-req = urllib.request.Request(
-    "https://oauth2.googleapis.com/token",
-    data=data,
-    method="POST",
-    headers={"Content-Type": "application/x-www-form-urlencoded"},
-)
-try:
-    with urllib.request.urlopen(req) as resp:
-        body = json.load(resp)
-except urllib.error.HTTPError as exc:
-    detail = exc.read().decode("utf-8", errors="replace")
-    print(f"Failed to exchange FIREBASE_TOKEN for access token: {detail}", file=sys.stderr)
-    print("Re-run: firebase login:ci && gh secret set FIREBASE_TOKEN", file=sys.stderr)
-    raise SystemExit(1) from exc
-print(body["access_token"])
-PY
-)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! node -e "require('firebase-tools/lib/auth')" >/dev/null 2>&1; then
+  echo "firebase-tools is required. Install with: npm install -g firebase-tools" >&2
+  exit 1
+fi
+ACCESS_TOKEN="$("${SCRIPT_DIR}/firebase_access_token.js")"
 
 PROJECT_ID="${FIREBASE_PROJECT_ID:-spatialverify-census}"
 STORAGE_BUCKET="${FIREBASE_STORAGE_BUCKET:-spatialverify-census.firebasestorage.app}"

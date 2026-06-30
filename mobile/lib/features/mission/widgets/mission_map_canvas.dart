@@ -22,6 +22,7 @@ class MissionMapCanvas extends StatelessWidget {
     this.pdfImageUrl,
     this.pdfBounds,
     this.pdfOpacity = 0.45,
+    this.boundaryUvRing = const [],
     this.showRegionPins = false,
     this.showBoundary = true,
     this.showNavigationRoute = true,
@@ -69,6 +70,7 @@ class MissionMapCanvas extends StatelessWidget {
   final String? pdfImageUrl;
   final ImageBounds? pdfBounds;
   final double pdfOpacity;
+  final List<({double x, double y})> boundaryUvRing;
   final bool showRegionPins;
   final bool showBoundary;
   final bool showNavigationRoute;
@@ -117,6 +119,7 @@ class MissionMapCanvas extends StatelessWidget {
         pdfImageUrl: pdfImageUrl,
         pdfBounds: pdfBounds,
         pdfOpacity: pdfOpacity,
+        boundaryUvRing: boundaryUvRing,
         showRegionPins: showRegionPins,
         showBoundary: showBoundary,
         showNavigationRoute: showNavigationRoute,

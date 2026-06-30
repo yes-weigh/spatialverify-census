@@ -159,12 +159,18 @@ class _PdfOverlayFineTuneMapState extends State<PdfOverlayFineTuneMap> {
     };
   }
 
+  List<GpsPoint> get _liveBoundary => SatelliteAlignMath.gpsBoundaryForOverlay(
+        _liveBounds,
+        widget.boundaryUvRing,
+        fallback: widget.boundary,
+      );
+
   Future<void> _fitCamera() async {
     final controller = _controller;
     if (controller == null) return;
 
     final points = <gmaps.LatLng>[
-      ...boundaryToGoogle(widget.boundary),
+      ...boundaryToGoogle(_liveBoundary),
       ...SatelliteAlignMath.overlayCornerPositions(_liveBounds)
           .map((p) => gmaps.LatLng(p.latitude, p.longitude)),
     ];
@@ -260,13 +266,13 @@ class _PdfOverlayFineTuneMapState extends State<PdfOverlayFineTuneMap> {
 
   @override
   Widget build(BuildContext context) {
-    final ring = boundaryToGoogle(widget.boundary);
+    final ring = boundaryToGoogle(_liveBoundary);
     final initial = ring.isNotEmpty
         ? ring.first
-        : MissionSatelliteMap.boundsCenter(widget.boundary) != null
+        : MissionSatelliteMap.boundsCenter(_liveBoundary) != null
             ? gmaps.LatLng(
-                MissionSatelliteMap.boundsCenter(widget.boundary)!.latitude,
-                MissionSatelliteMap.boundsCenter(widget.boundary)!.longitude,
+                MissionSatelliteMap.boundsCenter(_liveBoundary)!.latitude,
+                MissionSatelliteMap.boundsCenter(_liveBoundary)!.longitude,
               )
             : const gmaps.LatLng(10, 76);
 

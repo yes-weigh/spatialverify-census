@@ -26,6 +26,7 @@ class GoogleMissionMap extends StatefulWidget {
     this.pdfImageUrl,
     this.pdfBounds,
     this.pdfOpacity = 0.45,
+    this.boundaryUvRing = const [],
     this.showRegionPins = false,
     this.showBoundary = true,
     this.showNavigationRoute = true,
@@ -73,6 +74,7 @@ class GoogleMissionMap extends StatefulWidget {
   final String? pdfImageUrl;
   final ImageBounds? pdfBounds;
   final double pdfOpacity;
+  final List<({double x, double y})> boundaryUvRing;
   final bool showRegionPins;
   final bool showBoundary;
   final bool showNavigationRoute;
@@ -155,20 +157,22 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
   void didUpdateWidget(GoogleMissionMap oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    final overlayInputsChanged = oldWidget.showPdfOverlay != widget.showPdfOverlay ||
+    final pdfGeometryChanged = oldWidget.showPdfOverlay != widget.showPdfOverlay ||
         oldWidget.pdfImageUrl != widget.pdfImageUrl ||
-        oldWidget.pdfBounds != widget.pdfBounds ||
-        oldWidget.pdfOpacity != widget.pdfOpacity;
+        oldWidget.pdfBounds != widget.pdfBounds;
 
-    if (overlayInputsChanged) {
+    if (pdfGeometryChanged) {
       if (oldWidget.pdfImageUrl != widget.pdfImageUrl) {
         _loadPdfBitmap();
       } else {
         _rebuildOverlays();
       }
+    } else if (oldWidget.pdfOpacity != widget.pdfOpacity) {
+      _rebuildGroundOverlaysOnly();
     }
 
     final mapDataChanged = oldWidget.boundary != widget.boundary ||
+        oldWidget.boundaryUvRing != widget.boundaryUvRing ||
         oldWidget.boundaryDrawProgress != widget.boundaryDrawProgress ||
         oldWidget.regions != widget.regions ||
         oldWidget.showRegionPins != widget.showRegionPins ||
@@ -203,7 +207,7 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
 
     final userMoved = oldWidget.userLocation?.latitude != widget.userLocation?.latitude ||
         oldWidget.userLocation?.longitude != widget.userLocation?.longitude;
-    if (userMoved) {
+    if (userMoved && kIsWeb) {
       _rebuildOverlays();
     }
 
@@ -374,12 +378,46 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
     _fitCamera(fitContent: true);
   }
 
+  List<GpsPoint> _effectiveBoundary() => missionMapBoundaryRing(
+        storedRing: widget.boundary,
+        uvRing: widget.boundaryUvRing,
+        overlayBounds: widget.pdfBounds,
+      );
+
+  void _rebuildGroundOverlaysOnly() {
+    if (!mounted) return;
+    final groundOverlays = _buildGroundOverlays();
+    setState(() => _groundOverlays = groundOverlays);
+  }
+
+  Set<GroundOverlay> _buildGroundOverlays() {
+    final groundOverlays = <GroundOverlay>{};
+    if (widget.showPdfOverlay &&
+        widget.pdfImageUrl != null &&
+        widget.pdfBounds != null &&
+        _pdfBitmap != null) {
+      final bounds = widget.pdfBounds!;
+      groundOverlays.add(
+        GroundOverlay.fromBounds(
+          groundOverlayId: const GroundOverlayId('hlo_layout_overlay'),
+          image: _pdfBitmap!,
+          bounds: imageBoundsToGoogle(bounds),
+          transparency: (1 - widget.pdfOpacity.clamp(0.0, 1.0)).clamp(0.0, 1.0),
+          bearing: SatelliteAlignMath.normalizeMapBearing(bounds.rotation),
+          clickable: false,
+          zIndex: 1,
+        ),
+      );
+    }
+    return groundOverlays;
+  }
+
   void _rebuildOverlays() {
     final boundaryComplete = widget.boundaryDrawProgress >= 0.99;
-    final ring = boundaryToGoogle(widget.boundary);
+    final ring = boundaryToGoogle(_effectiveBoundary());
     final polylines = <Polyline>{};
     final markers = <Marker>{};
-    final groundOverlays = <GroundOverlay>{};
+    final groundOverlays = _buildGroundOverlays();
 
     if (widget.showBoundary && ring.length >= 2) {
       final closed = [...ring];
@@ -552,24 +590,6 @@ class _GoogleMissionMapState extends State<GoogleMissionMap> {
         flat: true,
         zIndexInt: 999,
       ));
-    }
-
-    if (widget.showPdfOverlay &&
-        widget.pdfImageUrl != null &&
-        widget.pdfBounds != null &&
-        _pdfBitmap != null) {
-      final bounds = widget.pdfBounds!;
-      groundOverlays.add(
-        GroundOverlay.fromBounds(
-          groundOverlayId: const GroundOverlayId('hlo_layout_overlay'),
-          image: _pdfBitmap!,
-          bounds: imageBoundsToGoogle(bounds),
-          transparency: (1 - widget.pdfOpacity.clamp(0.0, 1.0)).clamp(0.0, 1.0),
-          bearing: SatelliteAlignMath.normalizeMapBearing(bounds.rotation),
-          clickable: false,
-          zIndex: 1,
-        ),
-      );
     }
 
     setState(() {

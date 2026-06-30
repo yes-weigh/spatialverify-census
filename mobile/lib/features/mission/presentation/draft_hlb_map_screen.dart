@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/l10n/app_locale_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../data/hlb_map_pdf_exporter.dart';
 import '../models/mission_models.dart';
@@ -26,6 +27,7 @@ class _DraftHlbMapScreenState extends ConsumerState<DraftHlbMapScreen> {
   final _supDateCtrl = TextEditingController();
   var _footerLoaded = false;
   var _exporting = false;
+  var _savingFooter = false;
 
   EbMissionQuery get _query => EbMissionQuery(ebId: widget.ebId, projectId: widget.projectId);
 
@@ -54,15 +56,31 @@ class _DraftHlbMapScreenState extends ConsumerState<DraftHlbMapScreen> {
   }
 
   Future<void> _saveFooter() async {
-    final local = ref.read(missionLocalFirstProvider);
-    await local.saveLayoutMapFooter(
-      widget.ebId,
-      enumeratorName: _enumNameCtrl.text.trim().isEmpty ? null : _enumNameCtrl.text.trim(),
-      enumeratorDate: _enumDateCtrl.text.trim().isEmpty ? null : _enumDateCtrl.text.trim(),
-      supervisorName: _supNameCtrl.text.trim().isEmpty ? null : _supNameCtrl.text.trim(),
-      supervisorDate: _supDateCtrl.text.trim().isEmpty ? null : _supDateCtrl.text.trim(),
-    );
-    ref.invalidate(draftMapProvider(_query));
+    if (_savingFooter) return;
+    setState(() => _savingFooter = true);
+    try {
+      final local = ref.read(missionLocalFirstProvider);
+      await local.saveLayoutMapFooter(
+        widget.ebId,
+        enumeratorName: _enumNameCtrl.text.trim().isEmpty ? null : _enumNameCtrl.text.trim(),
+        enumeratorDate: _enumDateCtrl.text.trim().isEmpty ? null : _enumDateCtrl.text.trim(),
+        supervisorName: _supNameCtrl.text.trim().isEmpty ? null : _supNameCtrl.text.trim(),
+        supervisorDate: _supDateCtrl.text.trim().isEmpty ? null : _supDateCtrl.text.trim(),
+      );
+      ref.invalidate(draftMapProvider(_query));
+      if (!mounted) return;
+      final s = ref.read(appStringsProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(s.footerSaved)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Save failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _savingFooter = false);
+    }
   }
 
   Future<void> _exportPdf(DraftHlbMap map) async {
@@ -170,9 +188,15 @@ class _DraftHlbMapScreenState extends ConsumerState<DraftHlbMapScreen> {
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
-                    onPressed: _saveFooter,
-                    icon: const Icon(Icons.save_outlined),
-                    label: const Text('Save footer on map'),
+                    onPressed: _savingFooter ? null : _saveFooter,
+                    icon: _savingFooter
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save_outlined),
+                    label: Text(_savingFooter ? 'Saving…' : 'Save footer on map'),
                   ),
                   const SizedBox(height: 16),
                   const Text('Serpentine order (NW → SE)', style: TextStyle(fontWeight: FontWeight.w600)),

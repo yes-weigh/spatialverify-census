@@ -77,6 +77,9 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@15.1.0
+
       - name: Publish to Firebase (OTA)
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

@@ -654,13 +654,20 @@ class _SatelliteLaunchOrb extends StatelessWidget {
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onPressed,
-        child: SizedBox(
-          width: 56,
-          height: 56,
-          child: Icon(
-            retrace ? Icons.check_rounded : Icons.satellite_alt,
-            color: Colors.black,
-            size: 28,
+        child: Tooltip(
+          message: retrace ? 'Apply boundary trace' : 'Preview on satellite map',
+          child: Semantics(
+            button: true,
+            label: retrace ? 'Apply boundary trace' : 'Preview on satellite map',
+            child: SizedBox(
+              width: 56,
+              height: 56,
+              child: Icon(
+                retrace ? Icons.check_rounded : Icons.satellite_alt,
+                color: Colors.black,
+                size: 28,
+              ),
+            ),
           ),
         ),
       ),

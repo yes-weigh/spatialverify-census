@@ -101,4 +101,49 @@ class AppStrings {
         AppLanguage.en => 'Pan · zoom · rotate — crosshair marks the spot',
         AppLanguage.ml => 'പാൻ · സൂം · റൊട്ടേറ്റ് — ക്രോസ്ഹെയർ സ്ഥാനം കാണിക്കുന്നു',
       };
+
+  String get openMapLayers => switch (language) {
+        AppLanguage.en => 'Map layers',
+        AppLanguage.ml => 'മാപ്പ് ലെയറുകൾ',
+      };
+
+  String get fitBoundary => switch (language) {
+        AppLanguage.en => 'Fit boundary on screen',
+        AppLanguage.ml => 'ബൗണ്ടറി സ്ക്രീനിൽ ഫിറ്റ് ചെയ്യുക',
+      };
+
+  String get placeBuilding => switch (language) {
+        AppLanguage.en => 'Place building',
+        AppLanguage.ml => 'കെട്ടിടം വയ്ക്കുക',
+      };
+
+  String get placeFeature => switch (language) {
+        AppLanguage.en => 'Place feature',
+        AppLanguage.ml => 'ഫീച്ചർ വയ്ക്കുക',
+      };
+
+  String get startRoad => switch (language) {
+        AppLanguage.en => 'Start road',
+        AppLanguage.ml => 'റോഡ് ആരംഭിക്കുക',
+      };
+
+  String get toolBuilding => switch (language) {
+        AppLanguage.en => 'Building',
+        AppLanguage.ml => 'കെട്ടിടം',
+      };
+
+  String get toolFeature => switch (language) {
+        AppLanguage.en => 'Feature',
+        AppLanguage.ml => 'ഫീച്ചർ',
+      };
+
+  String get toolRoad => switch (language) {
+        AppLanguage.en => 'Road',
+        AppLanguage.ml => 'റോഡ്',
+      };
+
+  String get footerSaved => switch (language) {
+        AppLanguage.en => 'Footer saved on map',
+        AppLanguage.ml => 'ഫൂട്ടർ മാപ്പിൽ സേവ് ചെയ്തു',
+      };
 }

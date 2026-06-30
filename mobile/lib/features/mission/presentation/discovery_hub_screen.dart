@@ -79,7 +79,10 @@ class DiscoveryHubScreen extends ConsumerWidget {
                   _OfficialBoundaryCard(discovery: d),
                 ],
                 intelligenceAsync.when(
-                  loading: () => const SizedBox.shrink(),
+                  loading: () => const Padding(
+                    padding: EdgeInsets.only(top: 16),
+                    child: _LoadingCard(height: 88),
+                  ),
                   error: (_, __) => const SizedBox.shrink(),
                   data: (intel) {
                     if (intel == null || !intel.hasData) return const SizedBox.shrink();
@@ -90,7 +93,12 @@ class DiscoveryHubScreen extends ConsumerWidget {
                   },
                 ),
                 completionAsync.when(
-                  loading: () => const SizedBox.shrink(),
+                  loading: () => d.hasOfficialBoundary
+                      ? const Padding(
+                          padding: EdgeInsets.only(top: 16),
+                          child: _LoadingCard(height: 120),
+                        )
+                      : const SizedBox.shrink(),
                   error: (_, __) => const SizedBox.shrink(),
                   data: (c) => d.hasOfficialBoundary
                       ? Padding(
@@ -528,6 +536,30 @@ class _GapSummaryCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _LoadingCard extends StatelessWidget {
+  const _LoadingCard({required this.height});
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: const SizedBox(
+        width: 22,
+        height: 22,
+        child: CircularProgressIndicator(strokeWidth: 2),
       ),
     );
   }
