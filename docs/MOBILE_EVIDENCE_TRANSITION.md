@@ -1,5 +1,7 @@
 # Mobile Evidence Transition
 
+> **Implementation status:** Target architecture — **not in the shipping app**. `WorldRepository` migration plan; the app still uses `HlbLocalState` and Firebase sync (see [`AI_HANDOFF_CURRENT_STATE.md`](./AI_HANDOFF_CURRENT_STATE.md)).
+
 **Status:** Phase A guidance — do not remove local mutations immediately  
 
 ---

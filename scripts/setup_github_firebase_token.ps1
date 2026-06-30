@@ -8,11 +8,10 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "Opening browser for Firebase login (project: spatialverify-census)..." -ForegroundColor Cyan
 $raw = firebase login:ci --project spatialverify-census 2>&1 | Out-String
-if ($raw -match '(1//[\w-]+)') {
-    $token = $Matches[1]
-} else {
+$token = ($raw -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^1//' } | Select-Object -Last 1)
+if (-not $token) {
     Write-Host $raw
-    Write-Error "Could not parse token from firebase login:ci output"
+    Write-Error "Could not parse token from firebase login:ci output. Copy the line starting with 1// manually."
 }
 
 Write-Host "Saving FIREBASE_TOKEN to GitHub secret for $Repo ..." -ForegroundColor Cyan

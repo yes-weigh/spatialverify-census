@@ -1,5 +1,7 @@
 # Architecture Freeze
 
+> **Implementation status:** Target architecture — **not in the shipping app**. Guardrails for a future evidence pipeline; the frozen stack described here is not what runs in production today (see [`AI_HANDOFF_CURRENT_STATE.md`](./AI_HANDOFF_CURRENT_STATE.md)).
+
 **Effective:** 2026-06-25  
 **Status:** Frozen — no changes to core pipeline for several months  
 

@@ -4,7 +4,8 @@ import 'package:uuid/uuid.dart';
 import '../../../core/database/database.dart';
 import '../../../core/models/models.dart';
 import '../../../core/storage/secure_storage.dart';
-import 'auth_service.dart';
+import '../../licensing/data/user_account_repository.dart';
+import '../../licensing/presentation/licensing_providers.dart';
 
 class FirebaseAuthRepository implements AuthService {
   FirebaseAuthRepository({
@@ -24,6 +25,7 @@ class FirebaseAuthRepository implements AuthService {
   Future<(User, AuthTokens)> login(String email, String password) async {
     final cred = await _auth.signInWithEmailAndPassword(email: email.trim(), password: password);
     final user = await _mapAndCache(cred.user!);
+    await UserAccountRepository().ensureAccount(uid: user.id, email: user.email);
     final token = await cred.user!.getIdToken() ?? '';
     return (user, AuthTokens(accessToken: token, refreshToken: '', expiresIn: 3600));
   }
@@ -38,6 +40,7 @@ class FirebaseAuthRepository implements AuthService {
     final cred = await _auth.createUserWithEmailAndPassword(email: email.trim(), password: password);
     await cred.user?.updateDisplayName('$firstName $lastName');
     final user = await _mapAndCache(cred.user!);
+    await UserAccountRepository().ensureAccount(uid: user.id, email: user.email);
     final token = await cred.user!.getIdToken() ?? '';
     return (user, AuthTokens(accessToken: token, refreshToken: '', expiresIn: 3600));
   }

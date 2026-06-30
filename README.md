@@ -2,6 +2,8 @@
 
 Firebase-backed field census app for HLB mapping, layout georeferencing, and house listing.
 
+**Documentation:** See [`docs/README.md`](docs/README.md) for the full index (field manual, AI handoff, CI/OTA, and target-architecture specs).
+
 ## Architecture
 
 ```

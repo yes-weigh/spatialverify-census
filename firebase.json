@@ -6,6 +6,19 @@
   "storage": {
     "rules": "firebase/storage.rules"
   },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ],
   "hosting": {
     "public": "public",
     "ignore": [
@@ -22,6 +35,23 @@
             "value": "public, max-age=3600"
           }
         ]
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "/api/admin/**",
+        "function": {
+          "functionId": "adminApi",
+          "region": "asia-south1"
+        }
+      },
+      {
+        "source": "/admin",
+        "destination": "/admin/index.html"
+      },
+      {
+        "source": "/admin/**",
+        "destination": "/admin/index.html"
       }
     ]
   }

@@ -1,5 +1,7 @@
 # Mission Map UX Specification
 
+> **Implementation status:** Partially implemented — georef wizard, satellite map, and PDF overlay match this doc. Building placement uses a **map crosshair**, not camera validation. See [`AI_HANDOFF_CURRENT_STATE.md`](./AI_HANDOFF_CURRENT_STATE.md).
+
 **Version:** 1.0  
 **Status:** Frozen UX contract — implementation guide for mobile  
 **Parent:** [`PRODUCT_ARCHITECTURE_SPEC.md`](./PRODUCT_ARCHITECTURE_SPEC.md)  

@@ -4,6 +4,7 @@ import '../../core/database/database.dart';
 import '../../core/storage/secure_storage.dart';
 import '../../features/auth/data/auth_service.dart';
 import '../../features/auth/data/firebase_auth_repository.dart';
+import '../../features/licensing/data/user_account_repository.dart';
 import '../../features/mission/data/firebase_mission_repository.dart';
 import '../updates/app_update_service.dart';
 
@@ -73,6 +74,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final user = await _repository.getCurrentUser();
       if (user != null) {
+        await UserAccountRepository().ensureAccount(uid: user.id, email: user.email);
         await _ref.read(firebaseMissionRepositoryProvider).ensureWorkspace();
       }
       state = AuthState(user: user, isLoading: false);

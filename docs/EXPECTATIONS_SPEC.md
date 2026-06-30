@@ -1,5 +1,7 @@
 # Expectations Specification
 
+> **Implementation status:** Target architecture — **not in the shipping app**. Expectations domain and backend services described here are not built. See [`AI_HANDOFF_CURRENT_STATE.md`](./AI_HANDOFF_CURRENT_STATE.md) for what ships today.
+
 **Version:** 1.0  
 **Parent:** [`PRODUCT_ARCHITECTURE_SPEC.md`](./PRODUCT_ARCHITECTURE_SPEC.md) v1.0 (frozen)  
 **Related:** [`MISSION_KNOWLEDGE_ENGINE.md`](./MISSION_KNOWLEDGE_ENGINE.md), [`DIGITAL_TWIN_SPEC.md`](./DIGITAL_TWIN_SPEC.md)  

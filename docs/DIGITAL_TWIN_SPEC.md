@@ -1,5 +1,7 @@
 # Digital Twin Specification (World Model)
 
+> **Implementation status:** Target architecture — **not in the shipping app**. World model, graph, and projection pipeline described here are not implemented. Current state is `HlbLocalState` in Hive + Firestore sync (see [`AI_HANDOFF_CURRENT_STATE.md`](./AI_HANDOFF_CURRENT_STATE.md)).
+
 **Version:** 1.3  
 **Parent:** [`PRODUCT_ARCHITECTURE_SPEC.md`](./PRODUCT_ARCHITECTURE_SPEC.md) v1.0 (frozen)  
 **Status:** Living specification — authoritative for evidence, reasoning, graph, and projections  

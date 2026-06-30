@@ -13,13 +13,13 @@
 |-------------|-----|
 | Android phone with GPS | Live location, walk path, building pins |
 | Location permission **Allow all the time** or **While using** | Map follow-me and navigation |
-| Camera permission | Discovery walk (building marking) |
 | Official **HLO layout PDF** for your HLB | Boundary and PDF overlay |
 | Google Maps configured (release APK) | Satellite map, PDF overlay, bike/walk route to start |
+| **Firebase account** (provided by your supervisor) | Sign in and cloud backup of mission data |
 
-**Install the APK:** Copy `app-release.apk` to the phone and open it, or install via USB with `adb install -r app-release.apk`. Allow installation from unknown sources if prompted.
+**Install the APK:** Download from your organization's SpatialVerify page, copy `app-release.apk` to the phone, or install via USB with `adb install -r app-release.apk`. Allow installation from unknown sources if prompted.
 
-On first launch, grant **Location** and **Camera** when asked. The app briefly shows **Finding your location…** while it gets a GPS fix, then opens the map centered on **you** (blue dot).
+On first launch, **sign in** with your email and password, then grant **Location** when asked. The app briefly shows **Finding your location…** while it gets a GPS fix, then opens the map centered on **you** (blue dot).
 
 ---
 
@@ -57,8 +57,8 @@ The orange **Quest** banner (top-left) tells you what to do next:
 |-------|---------|
 | **Import HLO PDF & draw boundary** | You have not set up the official HLB boundary yet |
 | **Reach NW start corner** | Boundary is ready; go to the official north-west entry point |
-| **Walk & mark buildings on video** | You are at (or near) the start; begin the discovery walk |
-| **Complete field map coverage** | Buildings are being marked; fill gaps and finish walking the block |
+| **Mark buildings on the map** | Use the crosshair to place buildings, features, and roads |
+| **Complete field map coverage** | Fill gaps and finish walking the block |
 
 Progress bar (when boundary exists) shows **% mapped** based on coverage, roads walked, and targets completed.
 
@@ -100,29 +100,28 @@ On the **PDF editor** screen:
 
 Census blocks are walked from the **north-west corner** (official start point).
 
-1. On the mission map, tap **Go to start** (bottom-right, blue).
-2. A **blue bike/walk route** appears from your location to the green **start marker**.
-3. Follow the **turn banner** at the bottom (distance, ETA, current step).
-4. When within ~25 m of the start, a banner offers **START CAPTURE**.
+1. Open the **More** menu (☰ on the placement bar, or top-right menu).
+2. Tap **Navigate to NW corner**.
+3. A **blue bike/walk route** appears from your location to the green **start marker**.
+4. Follow the **turn banner** at the bottom (distance, ETA, current step).
 
-You can tap **Stop nav** anytime to cancel routing.
+You can cancel navigation from the turn banner when finished.
 
-### Step D — Discovery walk (mark buildings)
+### Step D — Mark buildings on the map
 
-1. Tap **Start capture** (green) or **START CAPTURE** after arriving at the start.
-2. The **camera screen** opens:
-   - Point the camera at buildings and structures as you walk.
-   - The app suggests detections; tap to **confirm** or **reject**.
-   - Confirm **building type** (pucca / kutcha / non-residential), **CN number**, and **house count** when prompted.
-   - Your **walk path** is recorded on GPS (breadcrumbs every ~30 s).
-3. Use the **mini-map** on the camera screen to see where you are inside the boundary.
-4. When finished for the session, go **back** to the main map.
+1. Pan and zoom the map so the **center crosshair** is over a structure or road.
+2. Choose a tool on the bottom bar:
+   - **Building** — residential or non-residential structure
+   - **Feature** — temple, shop, landmark, etc.
+   - **Road** — trace a road segment with multiple points
+3. Tap **Place building** / **Place feature** / **Start road**, then confirm details in the sheet (type, house count, name).
+4. Your **walk path** is recorded on GPS as you move (breadcrumbs).
 
-**Result:** Orange **building pins** and green **walk path** appear on the live map.
+**Result:** Orange **building pins**, feature markers, and road lines appear on the live map.
 
 ### Step E — Review the draft census map
 
-1. On the mission map, tap **Draft map** (bottom-right, purple).
+1. Open **More** (☰) → **HLB layout map**, or use the layout map entry from the menu.
 2. A **bottom sheet** shows the schematic draft map (buildings, landmarks, serpentine order).
 3. Tap the **expand** icon for the full **Draft HLB Map** screen (export to PDF optional).
 
@@ -162,20 +161,17 @@ This draft is for **field review and correction**, not official census submissio
 |--------|--------|
 | **Fit boundary** (crosshair) | Zoom map to fit HLB + markings |
 | **Basemap** (quick toggle) | Cycle Hybrid → Satellite → Map → Terrain |
-| **Menu** (☰) | Dashboard, replay, gaps, reorient, classic hub |
+| **More** (☰) | Re-import PDF, fine-tune overlay, navigate to NW, layout map, dashboard, replay, gaps, language, projects |
+
+### Bottom — Placement bar (when mapping)
+
+| Control | Action |
+|---------|--------|
+| **Building / Feature / Road** | Select what the crosshair will place |
+| **Place** | Confirm placement at crosshair and open detail sheet |
+| **More** (☰) | Same menu as above |
 
 Google Maps’ own **My location** button is also available to re-center on your blue dot.
-
-### Bottom-right — Primary actions
-
-| Button | When it appears |
-|--------|-----------------|
-| **Draft map** | Always |
-| **Import PDF** | No boundary yet |
-| **Go to start** | Boundary set, not at start |
-| **Stop nav** | During navigation |
-| **Start capture** | At start or ready to walk |
-| **Listing** | After at least one building discovered |
 
 ---
 
@@ -183,23 +179,26 @@ Google Maps’ own **My location** button is also available to re-center on your
 
 | Item | Purpose |
 |------|---------|
-| **Dashboard** | Discovery stats and analytics |
-| **Replay** | Replay your walk and map build-up |
+| **Re-import HLO PDF** | Run georef wizard again (when boundary exists) |
+| **Fine-tune PDF overlay** | Nudge PDF alignment on satellite map |
+| **Navigate to NW corner** | Turn-by-turn route to start point |
+| **HLB layout map** | Draft schematic map (bottom sheet) |
+| **Download HLB map PDF** | Export draft map as PDF |
+| **House listing** | Building-by-building listing phase (after buildings placed) |
+| **Dashboard** | Discovery stats |
+| **Walk replay** | Replay your walk and map build-up |
 | **Coverage gaps** | Areas not yet walked or verified |
-| **Reorient boundary** | Fine-tune boundary after confirm (layout-map source only) |
-| **Classic hub** | Older card-based discovery screen (same data) |
-
-The **Projects** folder icon (top-right on lobby or map) opens the project list — rarely needed in normal field use when you have one HLB.
+| **Switch language** | English / Malayalam / Hindi |
+| **Projects** | Project list (rarely needed for single-HLB use) |
 
 ---
 
-## 8. Reorienting the boundary
+## 8. Realigning the boundary
 
-If the boundary shifted slightly after confirmation:
+If the boundary shifted after confirmation:
 
-1. Menu → **Reorient boundary**
-2. Full-screen adjust map (same as wizard adjust mode)
-3. Select a corner → nudge with **↑ ↓ ← →** pad → **Lock** two corners → **Save**
+1. More menu → **Re-import HLO PDF** (opens georef wizard in realign mode), or use **Fine-tune PDF overlay** for small PDF shifts only.
+2. On the adjust map, select a corner → nudge with the arrow pad → **Lock** corners → **Save**.
 
 ---
 
@@ -224,10 +223,10 @@ If the boundary shifted slightly after confirmation:
 2. **Use Hybrid basemap** outdoors; switch to **Satellite** if you need clearer roofs.
 3. **Lower PDF opacity** (30–50%) when matching boundary to hedges, walls, or roads.
 4. Use the **bottom search bar** on the PDF editor — match each pin to a well-known landmark for better alignment.
-5. **Walk the block systematically** (serpentine NW → SE) so building numbers stay in order.
-6. **Confirm only what you see** — reject false camera detections.
+5. **Walk the block systematically** (serpentine NW → SE) while placing buildings at the crosshair.
+6. **Confirm only what you see** — correct mistakes by placing updated markers.
 7. Check **Coverage gaps** before leaving the HLB.
-8. Open **Draft map** anytime to compare with the official PDF overlay.
+8. Open **HLB layout map** anytime to compare with the official PDF overlay.
 
 ---
 
@@ -238,14 +237,14 @@ If the boundary shifted slightly after confirmation:
 | Map is blank / grey | Ensure Google Maps API key is in the build; check mobile data or Wi‑Fi |
 | No GPS / location stuck | Enable location services; go outdoors; grant location permission |
 | Map not centered on you | Wait for **Finding your location…** to finish; tap Google **My location** |
-| Route not showing | Tap **Go to start** again; move until GPS fixes; check internet for Directions API |
-| PDF overlay misaligned | Menu → **Reorient boundary** or re-run georef with better control pins |
+| Route not showing | More → **Navigate to NW corner** again; check internet for Directions API |
+| PDF overlay misaligned | More → **Fine-tune PDF overlay** or re-import with better control pins |
 | Wrong or missing HLB code | Re-import the official HLO PDF; code is taken from the PDF sidebar |
-| Camera black screen | Grant camera permission; close other camera apps |
-| Buildings not on map | Return to main map after confirming in camera; enable **Buildings** layer |
-| Need to start over | Use **Reorient boundary** or re-import PDF; contact support before uninstalling |
+| Buildings not on map | Enable **Buildings** layer; confirm you tapped **Place** after moving crosshair |
+| Cannot sign in | Check email/password; contact supervisor for account |
+| Data not on second device | Sign in with same account; wait for sync when online |
 
-**Standalone mode:** The release APK runs **offline-first**. Mission data is stored on the device. Sync to a backend only applies when a server is configured in the build.
+**Cloud sync:** When signed in and online, mission data syncs to Firebase. Work continues offline; changes upload when connectivity returns.
 
 ---
 
@@ -267,17 +266,17 @@ Uninstalling the app may delete this data unless backed up by your deployment pr
 ## 13. Quick reference — typical day
 
 ```
-Open app → Map centered on your GPS
+Sign in → Open app → Map centered on your GPS
     ↓ (first time — no boundary yet)
 Import HLO PDF → EB code read from PDF → Trace boundary → Match pins → Confirm on satellite
     ↓
-Go to start → Follow route → Arrive NW corner
+More → Navigate to NW corner → Follow route
     ↓
-Start capture → Walk block → Confirm buildings
+Place buildings/features/roads with crosshair → Walk block
     ↓
-Draft map → Coverage gaps → Re-walk if needed
+HLB layout map → Coverage gaps → Re-walk if needed
     ↓
-(Optional) House listing phase in app when mapping complete
+(Optional) House listing phase when mapping complete
 ```
 
 **Resume next day:** Open app → same HLB map picks up where you left off.
@@ -294,4 +293,4 @@ For technical setup (API keys, debug builds), see `mobile/run-debug.ps1` and `mo
 
 ---
 
-*This manual describes the map-first enumerator experience (single HLB, PDF-only setup, no manual EB entry). Features may vary slightly by build configuration (standalone vs server-connected).*
+*This manual describes the map-first enumerator experience (single HLB, PDF setup, Firebase sign-in, crosshair placement). OTA updates are delivered automatically when your supervisor publishes a new build.*

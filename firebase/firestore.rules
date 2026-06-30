@@ -10,8 +10,83 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    function creditsOf(data) {
+      return data.credits;
+    }
+
+    function validNewUser() {
+      let c = creditsOf(request.resource.data);
+      let lic = request.resource.data.license;
+      return request.resource.data.email is string
+        && c.dailyRemaining == c.dailyLimit
+        && c.dailyLimit == 10
+        && c.purchasedRemaining == 0
+        && c.totalPurchased == 0
+        && c.lastDailyReset is timestamp
+        && lic.active == false;
+    }
+
+    function validDailyReset(oldCredits, newCredits) {
+      return newCredits.lastDailyReset > oldCredits.lastDailyReset
+        && newCredits.dailyRemaining == newCredits.dailyLimit
+        && newCredits.purchasedRemaining == oldCredits.purchasedRemaining
+        && newCredits.totalPurchased == oldCredits.totalPurchased
+        && newCredits.dailyLimit == oldCredits.dailyLimit;
+    }
+
+    function validConsumption(oldCredits, newCredits) {
+      let dailySpent = oldCredits.dailyRemaining - newCredits.dailyRemaining;
+      let purchasedSpent = oldCredits.purchasedRemaining - newCredits.purchasedRemaining;
+      return newCredits.lastDailyReset == oldCredits.lastDailyReset
+        && dailySpent >= 0
+        && purchasedSpent >= 0
+        && (dailySpent > 0 || purchasedSpent > 0)
+        && dailySpent + purchasedSpent <= 50;
+    }
+
+    function validCreditUpdate() {
+      let oldC = creditsOf(resource.data);
+      let newC = creditsOf(request.resource.data);
+      return newC.dailyLimit == oldC.dailyLimit
+        && newC.totalPurchased == oldC.totalPurchased
+        && newC.purchasedRemaining <= oldC.purchasedRemaining
+        && newC.dailyRemaining <= oldC.dailyRemaining
+        && (validDailyReset(oldC, newC) || validConsumption(oldC, newC));
+    }
+
+    function licenseUnchanged() {
+      return request.resource.data.license == resource.data.license;
+    }
+
+    function validCreditHistoryCreate() {
+      let d = request.resource.data;
+      return d.type in ['consume', 'daily_reset', 'purchase_pending']
+        && d.amount is int
+        && d.balanceAfter is map
+        && d.createdAt is timestamp;
+    }
+
+    function validPaymentRequestCreate() {
+      let d = request.resource.data;
+      return d.uid == request.auth.uid
+        && d.status == 'PENDING'
+        && d.reference is string
+        && d.amount is int
+        && d.creditsRequested is int
+        && d.upiTransactionId is string
+        && d.createdAt is timestamp;
+    }
+
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && validNewUser();
+      allow update: if isOwner(userId) && licenseUnchanged() && validCreditUpdate();
+
+      match /credit_history/{entryId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && validCreditHistoryCreate();
+        allow update, delete: if false;
+      }
 
       match /projects/{projectId} {
         allow read, write: if isOwner(userId);
@@ -22,13 +97,22 @@ service cloud.firestore {
       }
     }
 
-    // Public release metadata for the download landing page.
+    match /payment_requests/{requestId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && validPaymentRequestCreate();
+      allow update, delete: if false;
+    }
+
+    match /system/pricing {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     match /system/android_release {
       allow read: if true;
       allow write: if false;
     }
 
-    // Other system docs remain signed-in only.
     match /system/{docId} {
       allow read: if isSignedIn();
       allow write: if false;

@@ -1,7 +1,9 @@
 # SpatialVerify / Census Mobile — AI Handoff Document
 
-**Last updated:** 2026-06-24  
-**Purpose:** Give another AI (or engineer) full context on project state, architecture, recent work, and known constraints without reading the entire repo.
+**Last updated:** 2026-06-30  
+**Purpose:** Give another AI (or engineer) full context on **what is implemented today** — architecture, flows, and constraints — without reading the entire repo.
+
+For target/future architecture (evidence pipeline, Node API), see [`PRODUCT_ARCHITECTURE_SPEC.md`](./PRODUCT_ARCHITECTURE_SPEC.md) and [`README.md`](./README.md).
 
 ---
 
@@ -9,15 +11,17 @@
 
 **SpatialVerify** (`spatialverify` Flutter app in `mobile/`) is a geospatial field-survey platform built for **Indian census HLB (House Listing Block) enumeration**. The primary user journey today is:
 
-1. **Import an official HLO PDF** (officer layout map)
-2. **Georeference it** to satellite imagery via control pins + CV-detected boundary
-3. **Work on a full-screen satellite mission map** (Google Maps when API key present)
-4. **Fine-tune PDF overlay alignment** after initial fit
-5. Transition to **discovery / house listing** once `hasOfficialBoundary` is set
+1. **Sign in** with Firebase Auth (email/password)
+2. **Import an official HLO PDF** (officer layout map)
+3. **Georeference it** to satellite imagery via control pins + CV-detected boundary
+4. **Work on a full-screen satellite mission map** (Google Maps when API key present)
+5. **Place buildings, features, and roads** using a map crosshair (not a camera walk)
+6. **Fine-tune PDF overlay alignment** after initial fit
+7. Transition to **house listing** once mapping coverage is sufficient
 
-The app runs in **`STANDALONE_MODE=true` by default** — all mission state lives on-device (Hive + local files). Backend sync exists but is bypassed in standalone dev.
+**Cloud backend:** Firebase Auth + Firestore + Storage. Mission state is **offline-first** on device (Hive), then syncs when signed in.
 
-**Primary dev target:** USB-connected Android phone via `mobile/run-debug.ps1`. Web is secondary.
+**Primary dev target:** USB-connected Android phone via `mobile/run-debug.ps1`. Web is not a production target.
 
 ---
 
@@ -26,20 +30,23 @@ The app runs in **`STANDALONE_MODE=true` by default** — all mission state live
 ```
 d:\census\
 ├── mobile/          ← Flutter app (main product surface)
-├── backend/         ← Node/Fastify API (spatialverify-api)
-├── docs/            ← Product/architecture specs (frozen UX contracts)
-├── docker/          ← Container configs
+├── firebase/        ← Firestore + Storage security rules
+├── public/          ← Firebase Hosting APK download page
+├── docs/            ← Specs (see docs/README.md for current vs target)
+├── scripts/         ← OTA publish, version bump, Firebase token setup
 ├── tools/           ← Bundled Flutter SDK + Android SDK (Windows dev)
-└── tmp/             ← TEMP/TMP redirect for builds
+└── .github/workflows/  ← CI + OTA + Firebase deploy
 ```
 
 | Area | Stack |
 |------|--------|
 | Mobile | Flutter 3.x, Dart ≥3.5, Riverpod, go_router, Drift (SQLite), Hive |
+| Cloud | Firebase Auth, Cloud Firestore, Firebase Storage, Firebase Hosting |
 | Maps | `google_maps_flutter` (primary on Android), `flutter_map` + Esri (fallback) |
 | CV | On-device `spatial_cv_*` pipeline (boundary detection from PDF raster) |
-| OCR | `google_mlkit_text_recognition` for EB block center on PDF panels |
-| Backend | Fastify, PostgreSQL, Redis/BullMQ, S3 (optional) |
+| OCR | `google_mlkit_text_recognition` for EB block labels on PDF panels |
+
+**Not in repo:** `backend/`, `docker/`, Cloud Functions, PostgreSQL API.
 
 ---
 
@@ -48,7 +55,7 @@ d:\census\
 ### 3.1 App entry
 
 - **`main.dart`**: Initializes secure storage, Drift DB, Riverpod; portrait-only on native.
-- **`router.dart`**: `STANDALONE_MODE=true` → skip login, land on `/` (`MissionLandingScreen`).
+- **`router.dart`**: Requires Firebase login — unauthenticated users go to `/login`, then `/` (`MissionLandingScreen`).
 - **`MissionLandingScreen`**: Resolves GPS once via `appLaunchLocationProvider`, then routes to active HLB or lobby.
 
 ### 3.2 HLB phase gate
@@ -70,7 +77,6 @@ Phase is stored in **`HlbLocalState.phase`** (Hive box `hlb_local_state`).
 | `/georef` | `LayoutGeorefWizardScreen` | Import PDF → georef → official boundary |
 | `/reorient` | `LayoutGeorefWizardScreen(startInAdjustMode: true)` | Re-adjust existing alignment |
 | `/start-point` | `StartPointScreen` | Navigate to NW entry corner |
-| `/discover-walk` | `DiscoveryCameraScreen` | Camera-based structure discovery |
 | `/hub` | `DiscoveryHubScreen` | Mission hub / progress |
 | `/listing` | `TodaysMissionScreen` | Building-by-building enumeration |
 | `/gaps` | `CoverageGapsScreen` | Coverage gap review |
@@ -89,11 +95,8 @@ File: `mobile/lib/core/config/app_config.dart`
 
 | Define | Default | Meaning |
 |--------|---------|---------|
-| `STANDALONE_MODE` | `true` | No backend auth/sync; local registry + Hive only |
-| `API_BASE_URL` | `http://10.0.2.2:3000/api/v1` | Census API (overridden by run script) |
-| `WS_BASE_URL` | `ws://10.0.2.2:3000/ws` | WebSocket |
 | `GOOGLE_MAPS_API_KEY` | `''` | Enables Google Maps + Directions |
-| `MAPBOX_ACCESS_TOKEN` | `''` | Mapbox (optional) |
+| `MAPBOX_ACCESS_TOKEN` | `''` | Mapbox (optional; `/map/:projectId` screen) |
 
 **`AppConfig.hasGoogleMaps`** → true when `GOOGLE_MAPS_API_KEY` non-empty.
 
@@ -104,12 +107,9 @@ Without Google Maps: Esri satellite fallback + compass/bearing navigation (no tu
 File: `mobile/run-debug.ps1`
 
 - Sets Flutter + ADB paths from `d:\census\tools\`
-- Auto-detects LAN IP for API URLs
 - Reads `GOOGLE_MAPS_API_KEY` from env or `android/local.properties`
-- Flags: `-Pub`, `-Clean`, `-Attach`, `-NoBuild`
-- Passes `--dart-define=STANDALONE_MODE=true` always
-
-**Speed tips embedded in script:** keep session open; `r` hot reload; `-Attach` for reconnect; `-Clean -Pub` after native/plugin changes.
+- Passes `--dart-define=GOOGLE_MAPS_API_KEY=...`
+- Flags: `-Pub`, `-Clean`, `-Attach`, `-NoBuild`, `-AllDeviceLogs`
 
 ### 4.3 Gradle (Windows gotcha)
 
@@ -130,9 +130,9 @@ kotlin.incremental=false
 | Store | Technology | Contents |
 |-------|------------|----------|
 | **HLB mission state** | Hive (`hlb_local_state` box) | Boundaries, buildings, breadcrumbs, intelligence JSON, phase |
-| **Project registry (standalone)** | Hive (`local_registry_v1`) | Local projects + EB list |
-| **General app data** | Drift/SQLite | Users, projects sync, assets, detections, sync queue |
-| **Layout images** | Filesystem | PDF/PNG bytes per EB via `mission_layout_storage.dart` |
+| **General app data** | Drift/SQLite | Users cache, assets, sync queue |
+| **Layout images** | Filesystem + Firebase Storage | PDF/PNG bytes per EB |
+| **Cloud sync** | Firestore | Per-user `projects/{id}/ebs/{ebId}` via `FirebaseMissionRepository` |
 
 **Source of truth for mission UX:** `HlbLocalState` via `HlbLocalCache` → `MissionLocalFirstService`.
 
@@ -353,30 +353,37 @@ Optional **block center hint:** OCR finds EB number on PDF panel → biases boun
 
 ---
 
-## 9. Discovery & listing (post-mapping)
+## 9. Discovery & mapping (implemented)
 
 Once `hasOfficialBoundary`:
 
-- **`DiscoveryStatus`** from `HlbStateComputer.discovery()` — breadcrumbs, buildings, gaps, start point bearing/distance
-- **Camera discovery:** `DiscoveryCameraScreen` + `DiscoveryCandidate` model (suggested → confirmed/rejected)
+**Screen:** `mission_game_map_screen.dart`
+
+- **Crosshair placement:** Pan/zoom the map; center crosshair marks the spot. Tools: **Building**, **Feature**, **Road/line** → tap **Place**.
+- **`MissionHlbMarkSheet`:** Confirms building type, house count, landmark name, or road segment after placement.
+- **Navigation to NW corner:** More menu (☰) → **Navigate to NW corner** when boundary + start point exist.
+- **`DiscoveryStatus`** from `HlbStateComputer.discovery()` — breadcrumbs, buildings, gaps, start point bearing/distance.
 - **Coverage gaps:** `HlbStateComputer.detectGaps()` — road-without-building, unvisited regions, etc.
-- **Building workflow:** per-building status enum (`notVisited`, `visited`, `completed`, `revisitRequired`)
+- **Building workflow:** per-building status in listing phase (`BuildingWorkflowScreen`).
 
-**Principle:** AI suggests; enumerator confirms. Never auto-create buildings from detections.
+**Principle:** Enumerator places and confirms structures on the map. There is **no camera-based discovery walk** in the current app.
 
-Spec reference: `docs/DISCOVERY_ENGINE_SPEC.md`, `docs/MISSION_KNOWLEDGE_ENGINE.md`.
+Spec reference (partial / target): `docs/DISCOVERY_ENGINE_SPEC.md`, `docs/MISSION_KNOWLEDGE_ENGINE.md`.
 
 ---
 
-## 10. Backend (when not standalone)
+## 10. Cloud sync (Firebase)
 
-**Package:** `backend/` — `spatialverify-api`
+**When signed in**, `MissionLocalFirstService`:
 
-- Fastify REST + WebSocket
-- PostgreSQL migrations in `backend/migrations/`
-- Sync queue on mobile via `MissionOfflineStore` + `SyncEngine`
+1. Writes to Hive immediately (never blocked by network).
+2. Pushes EB state JSON to Firestore `users/{uid}/projects/{projectId}/ebs/{ebId}`.
+3. Uploads layout PDF/PNG to Firebase Storage when present.
+4. Pulls remote state on `syncInBackground()` and merges by timestamp.
 
-In standalone mode, `MissionLocalFirstService.syncInBackground()` returns immediately; EB list comes from `LocalRegistryService`.
+**OTA updates:** `AppUpdateService` watches `system/android_release`, downloads APK from Storage.
+
+There is **no Node/Fastify API** in this repository.
 
 ---
 
@@ -495,10 +502,6 @@ UX contract: `docs/MISSION_MAP_UX.md` (satellite-first, PDF as import artifact).
 
 # After plugin/native changes
 .\run-debug.ps1 -Clean -Pub
-
-# Backend (if needed, non-standalone)
-cd backend
-npm run dev
 ```
 
 **Google Maps key:** set in `mobile/android/local.properties`:
@@ -512,10 +515,10 @@ GOOGLE_MAPS_API_KEY=your_key_here
 
 1. **Everything mission-related flows through `HlbLocalState` in Hive** — not Drift.
 2. **The map is the product** — PDF is an overlay on satellite, not the main canvas.
-3. **`hasOfficialBoundary` is the main feature flag** — unlocks navigation, fine-tune, discovery.
+3. **`hasOfficialBoundary` is the main feature flag** — unlocks navigation, fine-tune, placement tools.
 4. **`ImageBounds` + `uvRing` together define PDF placement** — changing bounds recomputes GPS boundary ring.
 5. **Google Maps ground overlays are strict** — bearing must be normalized; overlay IDs should be stable during gesture updates.
-6. **Standalone mode is the default dev path** — don't assume backend availability.
-7. **Recent work concentrated on** georef editor game HUD, mission map layers/fine-tune, build speed (`run-debug.ps1`), and crash fixes — not on completing discovery/listing polish.
+6. **Firebase login is required** — sync and multi-device backup need a signed-in user.
+7. **Building placement is map crosshair-based** — not a separate camera discovery screen.
 
 When continuing work, read **`mission_game_map_screen.dart`** and **`layout_georef_wizard_screen.dart`** first for UI state, then **`local_mission_import_service.dart`** for persistence semantics.

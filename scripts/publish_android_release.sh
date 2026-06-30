@@ -9,8 +9,8 @@ if [[ -z "${APK_PATH}" || ! -f "${APK_PATH}" ]]; then
   exit 1
 fi
 
-if [[ -z "${FIREBASE_TOKEN:-}" ]]; then
-  echo "FIREBASE_TOKEN is required (firebase login:ci)" >&2
+if [[ -z "${FIREBASE_TOKEN:-}" && -z "${FIREBASE_SERVICE_ACCOUNT:-}" && -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" && -z "${GOOGLE_GHA_CREDS_PATH:-}" ]]; then
+  echo "FIREBASE_SERVICE_ACCOUNT (recommended), google-github-actions/auth, or FIREBASE_TOKEN is required" >&2
   exit 1
 fi
 

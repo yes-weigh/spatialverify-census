@@ -1,5 +1,7 @@
 # Discovery Engine Specification (Mission Execution)
 
+> **Implementation status:** Target architecture — **not in the shipping app**. Camera validation, region lifecycle, and API-oriented discovery flow here are **not** how the app works today. Building placement uses a **map crosshair** (see [`AI_HANDOFF_CURRENT_STATE.md`](./AI_HANDOFF_CURRENT_STATE.md)).
+
 **Version:** 1.2  
 **Parent:** [`PRODUCT_ARCHITECTURE_SPEC.md`](./PRODUCT_ARCHITECTURE_SPEC.md) v1.0 (frozen)  
 **World Model:** [`DIGITAL_TWIN_SPEC.md`](./DIGITAL_TWIN_SPEC.md)  

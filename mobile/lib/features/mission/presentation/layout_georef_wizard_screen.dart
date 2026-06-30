@@ -41,6 +41,9 @@ import '../widgets/mission_navigation_banner.dart';
 import '../widgets/mission_satellite_map.dart';
 import '../widgets/pdf_overlay_fine_tune_map.dart';
 import 'mission_providers.dart';
+import '../../licensing/domain/premium_operation.dart';
+import '../../licensing/presentation/mission_credits_hud.dart';
+import '../../licensing/presentation/premium_operation_gate.dart';
 
 enum _WizardPhase { upload, analyzing, pdfEditor, verifyLandmarks, mapExperience, adjust, fineTune }
 
@@ -277,6 +280,7 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
                     )
                   : null,
               actions: [
+                const MissionCreditsHudChip(),
                 if (_layoutImageUrl != null && _phase != _WizardPhase.upload)
                   IconButton(
                     icon: const Icon(Icons.picture_as_pdf_outlined),
@@ -990,26 +994,33 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
     }
     if (bytes == null) return;
 
-    setState(() {
-      _trackingBoundary = true;
-      _error = null;
-    });
+    await PremiumOperationGate.run(
+      context,
+      ref,
+      PremiumOperation.generateBoundary,
+      () async {
+        setState(() {
+          _trackingBoundary = true;
+          _error = null;
+        });
 
-    try {
-      final ring = await _localImport.trackBoundary(Uint8List.fromList(bytes));
-      if (!mounted) return;
-      setState(() => _boundaryRing = ring);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Boundary traced — apply to update the GPS ring')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-      );
-    } finally {
-      if (mounted) setState(() => _trackingBoundary = false);
-    }
+        try {
+          final ring = await _localImport.trackBoundary(Uint8List.fromList(bytes!));
+          if (!mounted) return;
+          setState(() => _boundaryRing = ring);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Boundary traced — apply to update the GPS ring')),
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+          );
+        } finally {
+          if (mounted) setState(() => _trackingBoundary = false);
+        }
+      },
+    );
   }
 
   void _completeBoundaryRetrace() {
@@ -1667,21 +1678,34 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
     );
     if (result == null || result.files.isEmpty) return;
     final picked = result.files.single;
-    if (kIsWeb) {
-      final bytes = picked.bytes;
-      if (bytes == null) return;
-      await _uploadAndAnalyze(mapBytes: bytes, mapFileName: picked.name);
-      return;
-    }
-    if (picked.path == null) return;
-    await _uploadAndAnalyze(mapFile: File(picked.path!));
+
+    await PremiumOperationGate.run(
+      context,
+      ref,
+      PremiumOperation.importHlo,
+      () async {
+        if (kIsWeb) {
+          final bytes = picked.bytes;
+          if (bytes == null) return;
+          await _uploadAndAnalyze(mapBytes: bytes, mapFileName: picked.name);
+          return;
+        }
+        if (picked.path == null) return;
+        await _uploadAndAnalyze(mapFile: File(picked.path!));
+      },
+    );
   }
 
   Future<void> _pickCamera() async {
     if (kIsWeb) return;
     final img = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 85);
     if (img == null) return;
-    await _uploadAndAnalyze(mapFile: File(img.path));
+    await PremiumOperationGate.run(
+      context,
+      ref,
+      PremiumOperation.importHlo,
+      () => _uploadAndAnalyze(mapFile: File(img.path)),
+    );
   }
 
   Widget _pdfEditorBody() {
@@ -1770,73 +1794,87 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
     final draft = _manualDraft;
     if (draft == null) return;
 
-    setState(() {
-      _trackingBoundary = true;
-      _error = null;
-    });
+    await PremiumOperationGate.run(
+      context,
+      ref,
+      PremiumOperation.generateBoundary,
+      () async {
+        setState(() {
+          _trackingBoundary = true;
+          _error = null;
+        });
 
-    try {
-      final ring = await _localImport.trackBoundary(draft.mapBytes, metadata: draft.metadata);
-      if (!mounted) return;
-      setState(() => _boundaryRing = ring);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Boundary traced — red line follows the white border')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-      );
-    } finally {
-      if (mounted) setState(() => _trackingBoundary = false);
-    }
+        try {
+          final ring = await _localImport.trackBoundary(draft.mapBytes, metadata: draft.metadata);
+          if (!mounted) return;
+          setState(() => _boundaryRing = ring);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Boundary traced — red line follows the white border')),
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+          );
+        } finally {
+          if (mounted) setState(() => _trackingBoundary = false);
+        }
+      },
+    );
   }
 
   Future<void> _completeManualGeoref() async {
     final draft = _manualDraft;
     if (draft == null) return;
 
-    setState(() {
-      _phase = _WizardPhase.analyzing;
-      _analysisStep = 0;
-      _error = null;
-    });
-    _startAnalysisAnimation();
+    await PremiumOperationGate.run(
+      context,
+      ref,
+      PremiumOperation.runCv,
+      () async {
+        setState(() {
+          _phase = _WizardPhase.analyzing;
+          _analysisStep = 0;
+          _error = null;
+        });
+        _startAnalysisAnimation();
 
-    try {
-      final controlPoints = _localImport.controlPointsFromPins(_pins);
-      final args = ManualIntelIsolateArgs(
-        mapBytes: draft.mapBytes,
-        layoutPath: draft.layoutPath,
-        uvRing: _boundaryRing,
-        controlPoints: controlPoints.map((p) => p.toJson()).toList(),
-      );
-      final json = kIsWeb
-          ? buildManualIntelInIsolate(args)
-          : await compute(buildManualIntelInIsolate, args);
-      final intel = MissionIntelligencePackage.fromJson(json);
-      _analysisTimer?.cancel();
-      _intelligence = intel;
-      _imageBounds = intel.imageBounds;
-      _baseBounds = intel.imageBounds;
-      _mapCenter = MissionSatelliteMap.boundsCenter(intel.gpsBoundary) ??
-          LatLng(controlPoints.first.lat, controlPoints.first.lng);
-      _placementNotice =
-          'HLB placed using ${controlPoints.length} pins (${intel.raw?['alignment']?['alignmentLabel'] ?? 'matched'}, '
-          '${intel.raw?['alignment']?['rmsErrorMeters'] ?? '?'}m error).';
-      await _startMapReveal();
-    } catch (e) {
-      _analysisTimer?.cancel();
-      setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
-        _phase = _WizardPhase.pdfEditor;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_error ?? 'Could not align map')),
-        );
-      }
-    }
+        try {
+          final controlPoints = _localImport.controlPointsFromPins(_pins);
+          final args = ManualIntelIsolateArgs(
+            mapBytes: draft.mapBytes,
+            layoutPath: draft.layoutPath,
+            uvRing: _boundaryRing,
+            controlPoints: controlPoints.map((p) => p.toJson()).toList(),
+          );
+          final json = kIsWeb
+              ? buildManualIntelInIsolate(args)
+              : await compute(buildManualIntelInIsolate, args);
+          final intel = MissionIntelligencePackage.fromJson(json);
+          _analysisTimer?.cancel();
+          _intelligence = intel;
+          _imageBounds = intel.imageBounds;
+          _baseBounds = intel.imageBounds;
+          _mapCenter = MissionSatelliteMap.boundsCenter(intel.gpsBoundary) ??
+              LatLng(controlPoints.first.lat, controlPoints.first.lng);
+          _placementNotice =
+              'HLB placed using ${controlPoints.length} pins (${intel.raw?['alignment']?['alignmentLabel'] ?? 'matched'}, '
+              '${intel.raw?['alignment']?['rmsErrorMeters'] ?? '?'}m error).';
+          await _startMapReveal();
+        } catch (e) {
+          _analysisTimer?.cancel();
+          setState(() {
+            _error = e.toString().replaceFirst('Exception: ', '');
+            _phase = _WizardPhase.pdfEditor;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(_error ?? 'Could not align map')),
+            );
+          }
+        }
+      },
+    );
   }
 
   Widget _verifyLandmarksBody() {
@@ -2080,68 +2118,75 @@ class _LayoutGeorefWizardScreenState extends ConsumerState<LayoutGeorefWizardScr
   }
 
   Future<void> _looksCorrect() async {
-    setState(() {
-      _showReviewSheet = false;
-      _phase = _WizardPhase.analyzing;
-      _error = null;
-      _analysisStep = 3;
-    });
+    await PremiumOperationGate.run(
+      context,
+      ref,
+      PremiumOperation.generateMission,
+      () async {
+        setState(() {
+          _showReviewSheet = false;
+          _phase = _WizardPhase.analyzing;
+          _error = null;
+          _analysisStep = 3;
+        });
 
-    try {
-      final state = await _local.getRawState(widget.ebId);
-      final raw = _intelligence?.raw;
-      if (raw == null || _intelligence!.gpsBoundary.length < 3) {
-        throw Exception('Mission intelligence not ready');
-      }
-      final pdfCode = _manualDraft?.metadata?.ebNo?.trim();
-      final ebCode = (pdfCode != null && pdfCode.isNotEmpty)
-          ? pdfCode
-          : (state?.ebCode ?? kDefaultEbCode);
-      if (pdfCode != null && pdfCode.isNotEmpty) {
-        await applyPdfEbCode(
-          ref,
-          projectId: widget.projectId,
-          ebId: widget.ebId,
-          ebCode: pdfCode,
-        );
-      }
-      await _localImport.finalizeMission(
-        ebId: widget.ebId,
-        ebCode: ebCode,
-        intelligence: raw,
-        gpsBoundary: _intelligence!.gpsBoundary,
-      );
-      final finalized = await _local.getRawState(widget.ebId);
-      if (finalized != null) {
-        await _local.persistEbState(finalized);
-      }
-      await ref.read(firebaseMissionRepositoryProvider).updateEbStatus(
-            widget.projectId,
-            widget.ebId,
-            status: 'published',
+        try {
+          final state = await _local.getRawState(widget.ebId);
+          final raw = _intelligence?.raw;
+          if (raw == null || _intelligence!.gpsBoundary.length < 3) {
+            throw Exception('Mission intelligence not ready');
+          }
+          final pdfCode = _manualDraft?.metadata?.ebNo?.trim();
+          final ebCode = (pdfCode != null && pdfCode.isNotEmpty)
+              ? pdfCode
+              : (state?.ebCode ?? kDefaultEbCode);
+          if (pdfCode != null && pdfCode.isNotEmpty) {
+            await applyPdfEbCode(
+              ref,
+              projectId: widget.projectId,
+              ebId: widget.ebId,
+              ebCode: pdfCode,
+            );
+          }
+          await _localImport.finalizeMission(
+            ebId: widget.ebId,
+            ebCode: ebCode,
+            intelligence: raw,
+            gpsBoundary: _intelligence!.gpsBoundary,
           );
-      ref.invalidate(discoveryStatusProvider(EbMissionQuery(ebId: widget.ebId, projectId: widget.projectId)));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Mission ready — your area is on the map'),
-            backgroundColor: Color(0xFF00E676),
-          ),
-        );
-        context.go('/mission/${widget.projectId}/eb/${widget.ebId}');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyNetworkError(e))),
-      );
-      setState(() {
-        _error = friendlyNetworkError(e);
-        _phase = _WizardPhase.mapExperience;
-        _showReviewSheet = true;
-        _mapLayersDrawerOpen = false;
-      });
-    }
+          final finalized = await _local.getRawState(widget.ebId);
+          if (finalized != null) {
+            await _local.persistEbState(finalized);
+          }
+          await ref.read(firebaseMissionRepositoryProvider).updateEbStatus(
+                widget.projectId,
+                widget.ebId,
+                status: 'published',
+              );
+          ref.invalidate(discoveryStatusProvider(EbMissionQuery(ebId: widget.ebId, projectId: widget.projectId)));
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Mission ready — your area is on the map'),
+                backgroundColor: Color(0xFF00E676),
+              ),
+            );
+            context.go('/mission/${widget.projectId}/eb/${widget.ebId}');
+          }
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(friendlyNetworkError(e))),
+          );
+          setState(() {
+            _error = friendlyNetworkError(e);
+            _phase = _WizardPhase.mapExperience;
+            _showReviewSheet = true;
+            _mapLayersDrawerOpen = false;
+          });
+        }
+      },
+    );
   }
 }
 

@@ -1,5 +1,7 @@
 # Pull Request Invariants
 
+> **Implementation status:** Target architecture — **not in the shipping app**. PR checklist for the evidence pipeline; current CI checks Flutter tests and OTA publish only (see [`AI_HANDOFF_CURRENT_STATE.md`](./AI_HANDOFF_CURRENT_STATE.md)).
+
 Every PR must satisfy these rules. If a change violates one, fix the code or update the **Event Catalog** and companion spec for that subsystem only.
 
 ## Architecture

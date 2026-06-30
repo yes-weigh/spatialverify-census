@@ -14,7 +14,13 @@ service firebase.storage {
       allow read, write: if isOwner(userId);
     }
 
-    // OTA APK builds published by CI (public read for hosting download page).
+    match /payment-screenshots/{userId}/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
     match /app-releases/android/{fileName} {
       allow read: if true;
       allow write: if false;

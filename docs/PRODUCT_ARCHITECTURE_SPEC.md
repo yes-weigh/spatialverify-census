@@ -1,5 +1,7 @@
 # SpatialVerify — Product & Architecture Specification
 
+> **Implementation status:** Target architecture — **not in the shipping app**. The current product is Flutter + Hive/Firestore only (see [`AI_HANDOFF_CURRENT_STATE.md`](./AI_HANDOFF_CURRENT_STATE.md) and [`README.md`](../README.md)). No Node API, evidence pipeline, or camera discovery walk.
+
 **Version:** 1.0 (frozen)  
 **Document type:** Canonical product architecture — source of truth  
 **Audience:** Engineers, designers, AI agents (Cursor, ChatGPT), future contributors  

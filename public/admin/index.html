@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpatialVerify Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+  <div id="app">
+    <section id="login-view" class="panel login-panel">
+      <h1>SpatialVerify Admin</h1>
+      <p class="muted">Payment verification & credit approval</p>
+      <form id="login-form">
+        <label>
+          Username
+          <input id="username" name="username" autocomplete="username" required>
+        </label>
+        <label>
+          Password
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn primary">Sign in</button>
+        <p id="login-error" class="error hidden"></p>
+      </form>
+    </section>
+
+    <section id="dashboard-view" class="hidden">
+      <header class="topbar">
+        <div>
+          <h1>Admin Dashboard</h1>
+          <p class="muted">Manual payment approval</p>
+        </div>
+        <button id="logout-btn" class="btn ghost">Sign out</button>
+      </header>
+
+      <div id="stats" class="stats-grid"></div>
+
+      <nav class="tabs">
+        <button class="tab active" data-status="PENDING">Pending</button>
+        <button class="tab" data-status="APPROVED">Approved</button>
+        <button class="tab" data-status="REJECTED">Rejected</button>
+      </nav>
+
+      <div id="payments-list" class="payments-list"></div>
+    </section>
+
+    <dialog id="payment-dialog">
+      <form method="dialog" class="dialog-body">
+        <header>
+          <h2>Payment detail</h2>
+          <button type="button" id="close-dialog" class="btn ghost">Close</button>
+        </header>
+        <div id="payment-detail"></div>
+        <div class="dialog-actions">
+          <label class="custom-credits">
+            Custom credits (optional)
+            <input id="custom-credits" type="number" min="1" placeholder="Uses requested amount">
+          </label>
+          <div class="action-row">
+            <button type="button" id="reject-btn" class="btn danger">Reject</button>
+            <button type="button" id="approve-btn" class="btn primary">Approve</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+  </div>
+  <script src="/admin/admin.js" defer></script>
+</body>
+</html>

@@ -27,6 +27,9 @@ import '../widgets/mission_navigation_banner.dart';
 import '../widgets/mission_satellite_map.dart';
 import '../models/mission_models.dart';
 import 'mission_providers.dart';
+import '../../licensing/domain/premium_operation.dart';
+import '../../licensing/presentation/mission_credits_hud.dart';
+import '../../licensing/presentation/premium_operation_gate.dart';
 
 /// Full-screen gamified map — primary HLB enumerator experience.
 class MissionGameMapScreen extends ConsumerStatefulWidget {
@@ -219,23 +222,30 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
   Future<void> _downloadHlbMapPdf() async {
     if (_exportingPdf) return;
     final s = ref.read(appStringsProvider);
-    setState(() => _exportingPdf = true);
-    try {
-      final map = await ref.read(draftMapProvider(_query).future);
-      final state = await ref.read(missionLocalFirstProvider).getRawState(widget.ebId);
-      await shareHlbMapPdfFromState(
-        map: map,
-        layoutGeoref: state?.layoutGeoref,
-        ebId: widget.ebId,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${s.pdfExportFailed}: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _exportingPdf = false);
-    }
+    await PremiumOperationGate.run(
+      context,
+      ref,
+      PremiumOperation.downloadOffline,
+      () async {
+        setState(() => _exportingPdf = true);
+        try {
+          final map = await ref.read(draftMapProvider(_query).future);
+          final state = await ref.read(missionLocalFirstProvider).getRawState(widget.ebId);
+          await shareHlbMapPdfFromState(
+            map: map,
+            layoutGeoref: state?.layoutGeoref,
+            ebId: widget.ebId,
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${s.pdfExportFailed}: $e')),
+          );
+        } finally {
+          if (mounted) setState(() => _exportingPdf = false);
+        }
+      },
+    );
   }
 
   void _openMoreMenu(BuildContext context, DiscoveryStatus d) {
@@ -462,6 +472,8 @@ class _MissionGameMapScreenState extends ConsumerState<MissionGameMapScreen> wit
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
+                            const MissionCreditsHudChip(),
+                            const SizedBox(height: 8),
                             MissionMapHudIconButton(
                               icon: Icons.center_focus_strong,
                               tooltip: strings.fitBoundary,
@@ -1136,6 +1148,8 @@ class _MissionMapLobbyScreenState extends ConsumerState<MissionMapLobbyScreen> w
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      const MissionCreditsHudChip(),
+                      const SizedBox(width: 6),
                       MissionMapHudIconButton(
                         icon: _basemap.icon,
                         tooltip: 'Switch basemap',

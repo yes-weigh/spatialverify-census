@@ -1,5 +1,7 @@
 # Evidence Domain Specification
 
+> **Implementation status:** Target architecture — **not in the shipping app**. Evidence envelopes and REST APIs described here are not implemented. Current sync uses Firebase Firestore + Hive `HlbLocalState` (see [`AI_HANDOFF_CURRENT_STATE.md`](./AI_HANDOFF_CURRENT_STATE.md)).
+
 **Version:** 1.0  
 **Parent:** [`PRODUCT_ARCHITECTURE_SPEC.md`](./PRODUCT_ARCHITECTURE_SPEC.md)  
 **Execution contract:** [`EVENT_CATALOG.md`](./EVENT_CATALOG.md)  

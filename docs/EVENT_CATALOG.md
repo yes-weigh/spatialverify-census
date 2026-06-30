@@ -1,5 +1,7 @@
 # Event Catalog
 
+> **Implementation status:** Target architecture — **not in the shipping app**. Event types and pipeline contracts here apply to a future evidence system, not the current Firebase app (see [`AI_HANDOFF_CURRENT_STATE.md`](./AI_HANDOFF_CURRENT_STATE.md)).
+
 **Version:** 1.0  
 **Status:** Execution contract — update when adding events  
 **Audience:** Every engineer touching field capture, import, or pipeline  

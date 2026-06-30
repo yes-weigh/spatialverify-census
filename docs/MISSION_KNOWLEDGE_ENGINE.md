@@ -1,5 +1,7 @@
 # Mission Knowledge Engine Specification
 
+> **Implementation status:** Partially implemented — PDF import and georef exist in the app. Backend CV/intelligence pipeline and evidence packaging described below are **not built**. See [`AI_HANDOFF_CURRENT_STATE.md`](./AI_HANDOFF_CURRENT_STATE.md).
+
 **Version:** 1.2  
 **Parent:** [`PRODUCT_ARCHITECTURE_SPEC.md`](./PRODUCT_ARCHITECTURE_SPEC.md) v1.0 (frozen)  
 **Twin output:** [`DIGITAL_TWIN_SPEC.md`](./DIGITAL_TWIN_SPEC.md)  
